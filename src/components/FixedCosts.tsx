@@ -6,7 +6,8 @@ import { Sheet } from "./Sheet";
 import { TrashIcon } from "./Icons";
 import { CatIcon, CategoryPicker, useCategories } from "./Categories";
 import { supabase } from "@/lib/supabase";
-import { baht, dayKey } from "@/lib/format";
+import { baht, dayKey, monthRange } from "@/lib/format";
+import { useLive } from "@/lib/useLive";
 import { BILL_PERIODS, FIXED_COST_PRESETS, PAID_FROM_KEYS, monthlySetAside, paidFromLabel, type BillPeriod, type PaidFrom } from "@/lib/family";
 import type { ChargeRow } from "@/lib/cards";
 import type { BillRow, ExpenseRow } from "@/lib/types";
@@ -27,10 +28,15 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
   onRecord: (d: ExpenseDraft) => void;
 }) {
   const cats = useCategories();
-  const { people } = useHousehold();
+  const { people, household } = useHousehold();
   const [open, setOpen] = useState<BillRow | "new" | null>(null);
   const total = fixedMonthly(bills, subs);
   const now = new Date();
+  // ยอดจริงเดือนก่อน ไว้เทียบ (เช่น ค่าน้ำ ค่าไฟ ที่ยอดไม่คงที่)
+  const prevRange = monthRange(now.getFullYear(), now.getMonth() - 1);
+  const prev = useLive<Pick<ExpenseRow, "bill_id" | "amount">>("expenses", household.id, () =>
+    supabase().from("expenses").select("bill_id, amount").not("bill_id", "is", null).gte("spent_at", prevRange.start).lt("spent_at", prevRange.end), [prevRange.start]);
+  const prevOf = (id: string) => prev.rows.filter((e) => e.bill_id === id).reduce((s, e) => s + Number(e.amount), 0);
 
   return (
     <section className="card flex flex-col gap-2.5">
@@ -40,13 +46,15 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
       </div>
       {bills.length === 0 && subs.length === 0 && (
         <p className="text-sm text-muted">{scope === "home"
-          ? "เช่น ค่าน้ำ ค่าไฟ ค่าเน็ต ค่าขนมลูก ประกันบ้าน เลือกได้ว่าจ่ายทุกวัน ทุกเดือน หรือปีละครั้ง แอปคำนวณว่าต้องเตรียมเดือนละเท่าไร"
+          ? "เช่น ค่าเช่า ค่าเน็ต ค่าขนมลูก ประกันบ้าน · ค่าน้ำ ค่าไฟ ตั้งเป็น \"ยอดไม่คงที่\" แล้วจดยอดจริงทุกเดือน แอปเทียบกับเดือนก่อนให้"
           : "เช่น ค่าผ่อนรถที่หักบัญชีทุกวันที่ 5 ค่าโทรศัพท์ ประกันชีวิต · ตั้ง \"หักบัญชีอัตโนมัติ\" แล้วแอปจดให้เองทุกเดือน"}</p>
       )}
       {bills.map((b) => {
         const cat = cats.get(b.category ?? "bill");
         const rec = monthRows.find((e) => e.bill_id === b.id);
         const dueToday = b.due_day != null && isThisMonth && now.getDate() >= b.due_day;
+        const last = b.variable ? prevOf(b.id) : 0;
+        const diff = rec && last ? Number(rec.amount) - last : 0;
         return (
           <div key={b.id} className="flex items-center gap-2.5 text-sm">
             <button onClick={() => setOpen(b)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
@@ -56,6 +64,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
                 <span className="text-xs text-muted">
                   {b.variable ? "ยอดไม่คงที่ ~" : ""}{baht(Number(b.amount))}/{BILL_PERIODS[b.period].unit}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}
                   {b.auto_record ? " · จดให้อัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}
+                  {last > 0 ? (diff ? ` · ${diff > 0 ? "▲ แพงขึ้น" : "▼ ถูกลง"} ${baht(Math.abs(diff))} จากเดือนก่อน` : ` · เดือนก่อน ${baht(last)}`) : ""}
                 </span>
               </span>
             </button>
@@ -99,6 +108,8 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
 }
 
 type Method = "manual" | "auto" | "variable";
+const PRESET_CAT: Record<string, string> = { "ค่าน้ำ": "water", "ค่าไฟ": "power", "ค่าเน็ต": "net", "ค่าโทรศัพท์": "phone", "ค่าบ้าน/ค่าเช่า": "home", "ค่าผ่อนรถ": "car", "ค่าเทอม": "study", "ค่าขนมลูก": "pearl", "ค่าเดินทาง": "travel" };
+const VARIABLE_PRESETS = new Set(["ค่าน้ำ", "ค่าไฟ", "ค่าโทรศัพท์"]);
 
 function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home" | "mine"; onDone: () => void }) {
   const { people, userId } = useHousehold();
@@ -113,6 +124,14 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
   const [err, setErr] = useState<string | null>(null);
   const n = Number(amount.replace(/,/g, ""));
   const monthly = period === "monthly";
+  // ชื่อสำเร็จรูป → เดาหมวดและแบบจ่ายให้ (น้ำ ไฟ โทร ยอดไม่คงที่)
+  function pickPreset(p: string) {
+    setName(p);
+    if (bill) return;
+    const c = PRESET_CAT[p];
+    if (c) { setCat(c); setPaidFrom(cats.get(c).scope === "personal" ? "personal" : "pot"); }
+    if (VARIABLE_PRESETS.has(p)) { setMethod("variable"); setPeriod("monthly"); }
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -136,7 +155,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
   return (
     <form onSubmit={save} className="flex flex-col gap-3">
       <label className="flex flex-col gap-1 text-sm font-medium">ชื่อรายการ<input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ค่าผ่อนรถ, ประกันรถ" />
-        <span className="flex flex-wrap gap-1.5 pt-1">{FIXED_COST_PRESETS.map((p) => <button type="button" key={p} className="chip" aria-pressed={name === p} onClick={() => setName(p)}>{p}</button>)}</span>
+        <span className="flex flex-wrap gap-1.5 pt-1">{FIXED_COST_PRESETS.map((p) => <button type="button" key={p} className="chip" aria-pressed={name === p} onClick={() => pickPreset(p)}>{p}</button>)}</span>
       </label>
       <CategoryPicker value={cat} onChange={(c) => { setCat(c.key); if (!bill) setPaidFrom(c.scope === "personal" ? "personal" : "pot"); }} />
       <fieldset>

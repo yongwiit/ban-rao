@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Sheet } from "./Sheet";
 
 const DEFAULTS: Record<string, string[]> = {
-  home: ["income", "history", "settle", "goals", "fixed", "utilities", "list"],
-  mine: ["income", "cards", "history", "fixed", "utilities", "list"],
+  home: ["income", "history", "settle", "goals", "fixed", "list"],
+  mine: ["income", "cards", "history", "fixed", "list"],
 };
 const KEY = (scope: string) => `ban-rao:money-order:${scope}`;
 

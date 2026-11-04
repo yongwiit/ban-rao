@@ -9,9 +9,8 @@ import { BillRequests } from "@/components/BillRequests";
 import { FixedCosts, fixedMonthly } from "@/components/FixedCosts";
 import { Reorderable, useSectionOrder } from "@/components/Reorder";
 import { CatIcon, useCategories } from "@/components/Categories";
-import { activeSub, chargeInMonth } from "@/lib/cards";
+import { activeSub } from "@/lib/cards";
 import { Income } from "@/components/Income";
-import { Utilities } from "@/components/Utilities";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
 import { validPromptPay } from "@/lib/promptpay";
@@ -69,10 +68,6 @@ export default function MoneyPage() {
   const activeBills = bills.rows.filter((b) => b.active && (scope === "home" ? b.paid_from !== "personal" : b.paid_from === "personal" && b.created_by === userId));
   const mySubs = scope === "mine" ? cards.charges.filter((c) => activeSub(c, today)) : [];
   const setAside = fixedMonthly(activeBills, mySubs);
-  // บัตรของฉันในแท็บ "ของฉัน": นับค่าน้ำไฟเน็ตที่รูดบัตรเอง (ไม่ได้ส่งไปเรียกเก็บ)
-  const cardUtil = (k: string, y: number, m: number) => cards.charges
-    .filter((c) => c.category === k && (!c.bill_to || c.bill_status === "rejected"))
-    .reduce((s, c) => s + chargeInMonth(c, y, m), 0);
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const order = useSectionOrder(scope);
   // เดือนนี้: ค่าใช้จ่ายประจำรายเดือนที่ยังไม่ได้จด (ยังไม่ถึงวัน หรือยอดไม่คงที่ที่ยังไม่กรอก) นับรวมใน % ไว้ก่อน
@@ -123,7 +118,6 @@ export default function MoneyPage() {
     cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", node: <CreditCards /> },
     goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
     fixed: { label: "📌 ค่าใช้จ่ายประจำ", node: <FixedCosts scope={scope} bills={activeBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
-    utilities: { label: "💡 ค่าน้ำ ไฟ เน็ต", node: <Utilities ym={ym} filter={inScope} onAdd={(category) => setEditing(newDraft(category))} extra={scope === "mine" ? cardUtil : undefined} /> },
     list: { label: "🧾 รายการเดือนนี้", node: (
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
