@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { clearJoinCode, pendingJoinCode } from "@/lib/invite";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Role } from "@/lib/family";
@@ -103,7 +104,8 @@ function Splash() {
 }
 
 function Login() {
-  const [mode, setMode] = useState<"in" | "up">("in");
+  const [invited] = useState(() => pendingJoinCode());
+  const [mode, setMode] = useState<"in" | "up">(invited ? "up" : "in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -135,6 +137,7 @@ function Login() {
         <Family size={64} happy />
         <h1 className="font-display text-3xl font-bold">บ้านเรา</h1>
         <p className="text-muted">ปฏิทิน ซื้อของ และเงินของบ้าน ในที่เดียว</p>
+        {invited && <p className="rounded-2xl bg-lavender px-4 py-2 text-sm">คุณได้รับเชิญเข้าบ้าน 💌 สมัครด้วยอีเมลก่อน แล้วระบบจะใส่รหัสบ้านให้</p>}
       </div>
       <form onSubmit={submit} className="card flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm font-medium">
@@ -157,7 +160,7 @@ function Login() {
 
 function Setup({ onDone }: { onDone: () => Promise<void> }) {
   const [role, setRole] = useState<Role>("dad");
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => pendingJoinCode());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -168,7 +171,7 @@ function Setup({ onDone }: { onDone: () => Promise<void> }) {
     const { error } = await supabase().rpc(fn, args);
     setBusy(false);
     if (error) setMsg(error.message.includes("duplicate") ? `${PEOPLE[role].name} อยู่ในบ้านนี้แล้ว เลือกอีกคน` : error.message);
-    else await onDone();
+    else { clearJoinCode(); await onDone(); }
   }
 
   return (

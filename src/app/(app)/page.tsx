@@ -11,6 +11,7 @@ import { daysUntil, nextDue } from "@/lib/bills";
 import { supabase } from "@/lib/supabase";
 import { eventWhen, overlapFilter } from "@/lib/events";
 import { isHouseholdSpend } from "@/lib/family";
+import { InviteButtons } from "@/components/InviteButtons";
 import { useLive } from "@/lib/useLive";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
@@ -74,8 +75,9 @@ export default function TodayPage() {
       {!partnerJoined && (
         <div className="card flex flex-col gap-1 bg-lavender">
           <p className="font-display text-lg font-semibold">ชวนอีกคนเข้าบ้าน</p>
-          <p className="text-sm">ให้อีกคนสมัคร แล้วกรอกรหัสบ้านนี้</p>
+          <p className="text-sm">ส่งลิงก์ให้อีกคนกด สมัครแล้วจะเข้าบ้านเดียวกันเลย</p>
           <p className="font-display text-3xl font-bold tracking-[0.25em]">{household.join_code}</p>
+          <InviteButtons code={household.join_code} />
         </div>
       )}
 

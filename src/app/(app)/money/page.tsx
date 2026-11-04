@@ -6,6 +6,8 @@ import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
+import { SpendHistory } from "@/components/SpendHistory";
+import { InviteButtons } from "@/components/InviteButtons";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
 import { BILL_PERIODS, PAID_FROM, categoryLabel, isHouseholdSpend, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
@@ -96,6 +98,8 @@ export default function MoneyPage() {
         )}
       </section>
 
+      <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={household.budget_enabled} />
+
       <section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
         <div className="flex flex-1 flex-col">
@@ -145,7 +149,11 @@ export default function MoneyPage() {
         ))}
       </section>
 
-      <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ · รหัสบ้าน {household.join_code}</button>
+      <section className="card flex flex-col gap-2">
+        <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>
+        <InviteButtons code={household.join_code} />
+      </section>
+      <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ</button>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "แก้รายการ" : "จดรายจ่าย"}>
         {editing && (
