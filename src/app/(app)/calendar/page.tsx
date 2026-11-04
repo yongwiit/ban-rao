@@ -193,6 +193,7 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
   const [who, setWho] = useState<Who>(editing?.who ?? "all");
   const [note, setNote] = useState(editing?.note ?? "");
   const [priv, setPriv] = useState(editing?.private ?? false);
+  const [countdown, setCountdown] = useState(editing?.countdown ?? false);
   const [repeat, setRepeat] = useState<Repeat>(editing?.repeat ?? "none");
   const [remind, setRemind] = useState<number | null>(editing ? editing.remind_before : 60);
   const [busy, setBusy] = useState(false);
@@ -209,13 +210,13 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
     const ends_at = multi ? new Date(`${endDate}T23:59:00+07:00`).toISOString() : null;
     const opt = REMIND_OPTIONS.find((o) => o.value === remind);
     const remind_before = isAllDay && opt && !opt.allDay ? 0 : remind;
-    const row = { title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv, repeat: multi ? "none" : repeat, remind_before };
+    const row = { title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv, repeat: multi ? "none" : repeat, remind_before, countdown };
     const { error } = editing
       ? await supabase().from("events").update(row).eq("id", editing.id)
       : await supabase().from("events").insert(row);
     setBusy(false);
     if (error) return setErr(error.message);
-    setTitle(""); setNote(""); setPriv(false); setMulti(false); setRepeat("none"); setErr(null);
+    setTitle(""); setNote(""); setPriv(false); setCountdown(false); setMulti(false); setRepeat("none"); setErr(null);
     onClose();
   }
 
@@ -262,6 +263,7 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
           <span className="text-xs font-normal text-muted">{priv ? "นัดเห็นคนเดียว เตือนเฉพาะคุณ" : who === "dad" || who === "mom" ? `เตือนเฉพาะ${people.get(who).name}` : "เตือนทุกคนในบ้าน"}</span>
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">โน้ต<input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ไม่ใส่ก็ได้" /></label>
+        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={countdown} onChange={(e) => setCountdown(e.target.checked)} />⏳ นับถอยหลังบนหน้าวันนี้ (เช่น ทริป วันเกิด)</label>
         {mine && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} /><LockIcon />เห็นคนเดียว (เช่น เซอร์ไพรส์ วันครบรอบ)</label>}
         {err && <p role="alert" className="text-sm text-rose">{err}</p>}
         <button className="btn-dark" disabled={busy}>{editing ? "บันทึกการแก้ไข" : "บันทึกนัด"}</button>

@@ -1,15 +1,63 @@
 {
   "name": "บ้านเรา",
   "short_name": "บ้านเรา",
-  "description": "นัดหมาย ซื้อของ และเงินของบ้าน พ่ออั้ม แม่แพ็ค น้องเพิร์ล",
+  "description": "นัดหมาย ซื้อของ เงิน และสมุดดาวของครอบครัว",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFF8F0",
   "theme_color": "#FFF8F0",
   "lang": "th",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "จดรายจ่าย",
+      "short_name": "จดเร็ว",
+      "url": "/money?add=1",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "อัปสลิป / ใบเสร็จ",
+      "short_name": "อัปสลิป",
+      "url": "/slip",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "ลิสต์ซื้อของ",
+      "short_name": "ซื้อของ",
+      "url": "/shopping",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

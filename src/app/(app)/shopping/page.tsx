@@ -10,6 +10,8 @@ import { thHm } from "@/lib/recur";
 import { Sheet } from "@/components/Sheet";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
+import { confetti } from "@/lib/confetti";
+import { play } from "@/lib/sfx";
 import type { ItemRow, ListRow } from "@/lib/types";
 
 export default function ShoppingPage() {
@@ -18,6 +20,7 @@ export default function ShoppingPage() {
   const items = useLive<ItemRow>("shopping_items", household.id, () => supabase().from("shopping_items").select("*").order("created_at"));
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [doneMsg, setDoneMsg] = useState(false);
   const [newList, setNewList] = useState("");
   const [editList, setEditList] = useState<ListRow | null>(null);
   const [editItem, setEditItem] = useState<ItemRow | null>(null);
@@ -47,7 +50,10 @@ export default function ShoppingPage() {
     items.refresh();
   }
   async function toggle(i: ItemRow) {
+    const finishing = !i.done && inList.filter((x) => !x.done).length === 1;
     await supabase().from("shopping_items").update({ done: !i.done }).eq("id", i.id);
+    // ติ๊กชิ้นสุดท้ายของลิสต์ = ซื้อครบแล้ว เย้
+    if (finishing) { play("tada"); confetti({ emoji: "🛍️", count: 30 }); setDoneMsg(true); setTimeout(() => setDoneMsg(false), 4000); }
     items.refresh();
   }
   async function addList() {
@@ -100,6 +106,7 @@ export default function ShoppingPage() {
       )}
 
       <section className="flex flex-col gap-2">
+        {doneMsg && <p role="status" className="rounded-2xl bg-mint px-4 py-3 text-center font-semibold">ซื้อครบแล้ว เก่งมาก! 🎉 ขอบคุณที่ช่วยกันนะ</p>}
         {sorted.length === 0 && <p className="py-6 text-center text-sm text-muted">ลิสต์นี้ว่างอยู่</p>}
         {sorted.map((i) => (
           <div key={i.id} className={`flex min-h-[52px] items-center gap-3 rounded-[18px] px-3.5 ${i.done ? "bg-sand" : "bg-white"}`}>

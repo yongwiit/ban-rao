@@ -14,7 +14,7 @@ export const MASCOT_LABEL: Record<MascotKind, string> = {
 };
 export const COLORS = ["#5E8FC9", "#D9738F", "#D9941F", "#8A6FC7", "#3FA39B", "#E07B4F", "#7A9A3A", "#B5657A"];
 
-export type Person = { key: string; name: string; mascot: MascotKind; color: string; soft: string; kid: boolean };
+export type Person = { key: string; name: string; mascot: MascotKind; color: string; soft: string; kid: boolean; promptpay?: string | null };
 
 /** สีอ่อนจากสีหลัก (ผสมขาว 80%) */
 export function softOf(hex: string): string {

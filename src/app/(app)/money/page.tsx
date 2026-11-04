@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { PromptPayQR } from "@/components/PromptPayQR";
+import { Goals } from "@/components/Goals";
+import { confetti } from "@/lib/confetti";
+import { play } from "@/lib/sfx";
+import { validPromptPay } from "@/lib/promptpay";
 import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
@@ -27,6 +32,15 @@ export default function MoneyPage() {
   const [editing, setEditing] = useState<ExpenseDraft | null>(null);
   const [billOpen, setBillOpen] = useState<BillRow | "new" | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
+  // ปุ่ม "จดเร็ว" จากไอคอนแอป (/money?add=1) เปิดฟอร์มจดรายจ่ายทันที
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("add") !== "1") return;
+    const t = new Date();
+    window.history.replaceState(null, "", "/money");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditing({ amount: "", date: dayKey(t), time: thaiTime(t), merchant: "", category: "home", paid_from: "pot", private: false, note: "" });
+  }, []);
 
   const month = useLive<ExpenseRow>("expenses", hid, () =>
     supabase().from("expenses").select("*").gte("spent_at", start).lt("spent_at", end).order("spent_at", { ascending: false }), [start]);
@@ -55,7 +69,8 @@ export default function MoneyPage() {
     if (owe === 0) return;
     const amount = Math.abs(owe);
     const row = owe > 0 ? { from_role: "mom", to_role: "dad", amount } : { from_role: "dad", to_role: "mom", amount };
-    await supabase().from("settlements").insert(row);
+    const { error } = await supabase().from("settlements").insert(row);
+    if (!error) { setSettleOpen(false); play("tada"); confetti({ emoji: "💞", count: 26 }); }
   }
   function shift(n: number) {
     const d = new Date(ym.y, ym.m + n, 1);
@@ -117,8 +132,25 @@ export default function MoneyPage() {
             {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${people.get("mom").name}โอนให้${people.get("dad").name} ${baht(owe)} บาท` : `${people.get("dad").name}โอนให้${people.get("mom").name} ${baht(-owe)} บาท`}
           </span>
         </div>
-        {owe !== 0 && <button onClick={settle} className="btn-soft min-h-10 px-3.5 text-[13px]">เคลียร์แล้ว</button>}
+        {owe !== 0 && <button onClick={() => setSettleOpen(true)} className="btn-soft min-h-10 px-3.5 text-[13px]">โอน / เคลียร์</button>}
       </section>
+      <Sheet open={settleOpen} onClose={() => setSettleOpen(false)} title="เคลียร์เงินกัน">
+        {(() => {
+          const to = people.get(owe > 0 ? "dad" : "mom"), from = people.get(owe > 0 ? "mom" : "dad");
+          return (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm">{from.name}โอนให้{to.name} <b>{baht(Math.abs(owe), 2)} บาท</b></p>
+              {validPromptPay(to.promptpay)
+                ? <PromptPayQR id={to.promptpay} amount={Math.abs(owe)} name={to.name} />
+                : <p className="rounded-2xl bg-sand p-3 text-sm">อยากได้ QR สำหรับสแกนโอน ให้{to.name}ใส่พร้อมเพย์ที่ <Link href="/settings" className="font-semibold underline">ตั้งค่า → คนในบ้าน</Link></p>}
+              <button className="btn-dark" onClick={settle}>โอนแล้ว · เคลียร์ยอด</button>
+              <p className="text-center text-xs text-muted">กดหลังโอนเสร็จในแอปธนาคาร ยอดจะกลับเป็น 0</p>
+            </div>
+          );
+        })()}
+      </Sheet>
+
+      <Goals />
 
       <section className="card flex flex-col gap-2">
         <div className="flex items-baseline justify-between">

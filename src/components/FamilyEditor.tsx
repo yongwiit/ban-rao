@@ -49,6 +49,7 @@ function PersonForm({ p, householdId, keys, onDone }: { p: Person | null; househ
   const [name, setName] = useState(p?.name ?? "");
   const [mascot, setMascot] = useState<MascotKind>(p?.mascot ?? MASCOTS[(used + 2) % MASCOTS.length]);
   const [color, setColor] = useState(p?.color ?? COLORS[used % COLORS.length]);
+  const [pp, setPp] = useState(p?.promptpay ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -56,10 +57,12 @@ function PersonForm({ p, householdId, keys, onDone }: { p: Person | null; househ
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setMsg("ใส่ชื่อก่อนนะ");
+    const promptpay = pp.replace(/\D/g, "") || null;
+    if (promptpay && !/^(\d{10}|\d{13}|\d{15})$/.test(promptpay)) return setMsg("พร้อมเพย์ใส่เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก");
     setBusy(true);
     const db = supabase().from("household_people");
     const { error } = p
-      ? await db.update({ name: name.trim(), mascot, color }).eq("household_id", householdId).eq("key", p.key)
+      ? await db.update({ name: name.trim(), mascot, color, ...(p.kid ? {} : { promptpay }) }).eq("household_id", householdId).eq("key", p.key)
       : await db.insert({ household_id: householdId, key: nextKidKey(keys), name: name.trim(), mascot, color, sort: 10 + used });
     setBusy(false);
     if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
@@ -102,6 +105,13 @@ function PersonForm({ p, householdId, keys, onDone }: { p: Person | null; househ
           ))}
         </div>
       </fieldset>
+      {p && !p.kid && (
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          พร้อมเพย์ (ไม่บังคับ)
+          <input className="field" inputMode="numeric" maxLength={17} value={pp} placeholder="เบอร์มือถือ หรือเลขบัตรประชาชน" onChange={(e) => setPp(e.target.value)} />
+          <span className="text-xs font-normal text-muted">ใช้สร้าง QR ให้อีกฝ่ายสแกนโอนตอนเคลียร์เงินหรือฝากเงินออม แอปไม่ได้เชื่อมกับธนาคาร และเห็นเฉพาะคนในบ้าน</span>
+        </label>
+      )}
       {msg && <p role="alert" className="text-sm text-rose">{msg}</p>}
       <button className="btn-dark" disabled={busy}>{p ? "บันทึก" : "เพิ่มลูก"}</button>
       {p?.kid && (confirmDel ? (

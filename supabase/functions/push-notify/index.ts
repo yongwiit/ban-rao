@@ -1,4 +1,4 @@
-// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด / เตือนไปซื้อของ (cron ทุก 5 นาที) / ส่งหัวใจ / ทดสอบ
+// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด / เตือนไปซื้อของ (cron ทุก 5 นาที) / ส่งหัวใจ / ดาว / รายจ่าย+งบ / ชวนอัปสลิป 2 ทุ่ม / ทดสอบ
 // ปลอดภัยแม้ใครเรียก: ส่งเฉพาะสิ่งที่ถึงเวลาจริง และกันส่งซ้ำ
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
@@ -22,6 +22,7 @@ type Ev = RecurEvent & {
   created_by: string; updated_by: string | null; updated_at: string;
 };
 type Sub = { endpoint: string; user_id: string; p256dh: string; auth: string; notify_new: boolean; notify_remind: boolean };
+type Flag = "notify_new" | "notify_remind" | "notify_money" | "notify_daily";
 
 let vapidReady = false;
 async function initVapid() {
@@ -41,7 +42,7 @@ async function recipients(e: Ev): Promise<string[]> {
   return rows.map((m) => m.user_id);
 }
 
-async function send(users: string[], flag: "notify_new" | "notify_remind", payload: Record<string, unknown>) {
+async function send(users: string[], flag: Flag, payload: Record<string, unknown>) {
   if (!users.length) return 0;
   await initVapid();
   const { data } = await db.from("push_subscriptions").select("*").in("user_id", users).eq(flag, true);
@@ -118,6 +119,7 @@ async function onCron() {
     }
   }
   sent += await onListCron(now);
+  sent += await onDailyNudge(now);
   return { sent };
 }
 
@@ -159,6 +161,96 @@ async function onListCron(now: number) {
     });
   }
   return sent;
+}
+
+/** กันส่งซ้ำสำหรับแจ้งเตือนเรื่องเงิน */
+async function once(key: string): Promise<boolean> {
+  const { error } = await db.from("notify_log").insert({ key });
+  return !error;
+}
+const bahtTh = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+const thMonthStart = (d: Date) => { const [y, m] = thDay(d).split("-"); return new Date(`${y}-${m}-01T00:00:00+07:00`); };
+
+/** จดรายจ่ายใหม่ → แจ้งพ่อหรือแม่อีกคน + เตือนเมื่อใช้งบถึง 80% / 100% */
+async function onExpense(id: string) {
+  const { data: e } = await db.from("expenses").select("*").eq("id", id).maybeSingle();
+  if (!e || Date.now() - new Date(e.created_at).getTime() > 10 * 60_000) return { sent: 0 };
+  // รายจ่ายส่วนตัว / เห็นคนเดียว ไม่แจ้งใคร
+  if (e.private || e.paid_from === "personal") return { sent: 0 };
+  const { data: mem } = await db.from("members").select("user_id, role").eq("household_id", e.household_id);
+  const parents = (mem ?? []).filter((m) => m.role === "dad" || m.role === "mom");
+  const actor = parents.find((m) => m.user_id === e.created_by);
+  const NAMES = await names(e.household_id);
+  const by = actor ? NAMES[actor.role] : "คนในบ้าน";
+  // รวมรายการที่คนนี้จดวันนี้ ใช้ tag เดียวกัน แจ้งเตือนจะทับกันไม่รัวเครื่อง
+  const dayStart = new Date(`${thDay(new Date())}T00:00:00+07:00`).toISOString();
+  const { data: today } = await db.from("expenses").select("amount, private, paid_from").eq("created_by", e.created_by).gte("created_at", dayStart);
+  const mine = (today ?? []).filter((x) => !x.private && x.paid_from !== "personal");
+  const sum = mine.reduce((s, x) => s + Number(x.amount), 0);
+  const body = mine.length > 1
+    ? `วันนี้จด ${mine.length} รายการ รวม ${bahtTh(sum)} บาท · ล่าสุด ${e.merchant || "ไม่ระบุร้าน"} ${bahtTh(Number(e.amount))}`
+    : `${e.merchant || "ไม่ระบุร้าน"} ${bahtTh(Number(e.amount))} บาท`;
+  let sent = await send(parents.filter((m) => m.user_id !== e.created_by).map((m) => m.user_id), "notify_money", {
+    title: `💸 ${by}จดรายจ่าย`, body, url: "/money", tag: `exp-${e.created_by}`,
+  });
+
+  // งบเดือนนี้
+  const { data: h } = await db.from("households").select("monthly_budget, budget_enabled").eq("id", e.household_id).maybeSingle();
+  const budget = Number(h?.monthly_budget ?? 0);
+  if (h?.budget_enabled && budget > 0) {
+    const start = thMonthStart(new Date());
+    const end = new Date(start.getTime() + 40 * 864e5);
+    const nextStart = thMonthStart(end);
+    const { data: rows } = await db.from("expenses").select("amount, private, paid_from").eq("household_id", e.household_id)
+      .gte("spent_at", start.toISOString()).lt("spent_at", nextStart.toISOString());
+    const total = (rows ?? []).filter((x) => !x.private && x.paid_from !== "personal").reduce((s, x) => s + Number(x.amount), 0);
+    const ym = thDay(start).slice(0, 7);
+    const pct = (total / budget) * 100;
+    const level = pct >= 100 ? 100 : pct >= 80 ? 80 : 0;
+    if (level && (await once(`budget:${e.household_id}:${ym}:${level}`))) {
+      if (level === 100) await once(`budget:${e.household_id}:${ym}:80`);
+      sent += await send(parents.map((m) => m.user_id), "notify_money", {
+        title: level === 100 ? "🚨 ใช้เกินงบเดือนนี้แล้ว" : "⚠️ ใช้งบเดือนนี้ไปแล้ว 80%",
+        body: `ใช้ไป ${bahtTh(total)} จากงบ ${bahtTh(budget)} บาท${level === 100 ? ` (เกิน ${bahtTh(total - budget)})` : ` เหลือ ${bahtTh(budget - total)}`}`,
+        url: "/money", tag: `budget-${e.household_id}`,
+      });
+    }
+  }
+  return { sent };
+}
+
+/** 2 ทุ่ม: ชวนอัปสลิปของวันนี้ */
+async function onDailyNudge(now: number) {
+  const hm = thHm(new Date(now));
+  if (hm < "20:00" || hm >= "20:15") return 0;
+  const day = thDay(new Date(now));
+  const { data: subs } = await db.from("push_subscriptions").select("user_id").eq("notify_daily", true);
+  const users = [...new Set((subs ?? []).map((s) => s.user_id))];
+  if (!users.length) return 0;
+  const { data: mem } = await db.from("members").select("user_id, role").in("user_id", users);
+  const dayStart = new Date(`${day}T00:00:00+07:00`).toISOString();
+  let sent = 0;
+  for (const m of mem ?? []) {
+    if (m.role !== "dad" && m.role !== "mom") continue;
+    if (!(await once(`daily:${m.user_id}:${day}`))) continue;
+    const { count } = await db.from("expenses").select("id", { count: "exact", head: true }).eq("created_by", m.user_id).gte("created_at", dayStart);
+    sent += await send([m.user_id], "notify_daily", count
+      ? { title: `🧾 วันนี้จดไปแล้ว ${count} รายการ`, body: "มีสลิปอื่นที่ยังไม่ได้อัปไหม แตะเพื่อเลือกสลิปของวันนี้", url: "/slip", tag: "daily" }
+      : { title: "🧾 วันนี้จ่ายอะไรไปบ้าง?", body: "แตะเพื่อเลือกสลิปของวันนี้ทีเดียวหลายใบ แอปอ่านให้", url: "/slip", tag: "daily" });
+  }
+  return sent;
+}
+
+/** โน้ตรัก 💌 */
+async function onNote(id: string) {
+  const { data: n } = await db.from("love_notes").select("*").eq("id", id).maybeSingle();
+  if (!n || Date.now() - new Date(n.created_at).getTime() > 5 * 60_000) return { sent: 0 };
+  const { data: mem } = await db.from("members").select("user_id, role").eq("household_id", n.household_id);
+  const from = (mem ?? []).find((m) => m.user_id === n.from_user);
+  const name = from ? (await names(n.household_id))[from.role] ?? "คนในบ้าน" : "คนในบ้าน";
+  const to = n.to_user ? [n.to_user] : (mem ?? []).map((m) => m.user_id).filter((u) => u !== n.from_user);
+  const sent = await send(to, "notify_new", { title: `${n.emoji} โน้ตจาก${name}`, body: n.body, url: "/", tag: `note-${n.from_user}` });
+  return { sent };
 }
 
 /** ส่งหัวใจ 💗 ถึงคนในบ้าน */
@@ -221,6 +313,8 @@ Deno.serve(async (req) => {
     let out: unknown = { ok: true };
     if (body.type === "cron") out = await onCron();
     else if ((body.type === "new" || body.type === "change") && typeof body.event_id === "string") out = await onChange(body.event_id, body.type);
+    else if (body.type === "expense" && typeof body.expense_id === "string") out = await onExpense(body.expense_id);
+    else if (body.type === "note" && typeof body.note_id === "string") out = await onNote(body.note_id);
     else if (body.type === "heart" && typeof body.heart_id === "string") out = await onHeart(body.heart_id);
     else if (body.type === "star" && typeof body.log_id === "string") out = await onStar(body.log_id);
     else if (body.type === "test" && typeof body.endpoint === "string") out = await onTest(body.endpoint);

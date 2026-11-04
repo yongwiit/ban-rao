@@ -44,8 +44,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [people, setPeople] = useState<People>(() => makePeople(DEFAULT_PEOPLE));
 
   const loadPeople = useCallback(async (hid: string) => {
-    const { data } = await supabase().from("household_people").select("key, name, mascot, color, sort").eq("household_id", hid).order("sort").order("key");
-    if (data?.length) setPeople(makePeople(data.map((r) => person(r.key, r.name, r.mascot as MascotKind, r.color))));
+    const { data } = await supabase().from("household_people").select("key, name, mascot, color, sort, promptpay").eq("household_id", hid).order("sort").order("key");
+    if (data?.length) setPeople(makePeople(data.map((r) => ({ ...person(r.key, r.name, r.mascot as MascotKind, r.color), promptpay: r.promptpay }))));
   }, []);
 
   useEffect(() => {

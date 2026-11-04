@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { LoveNotes } from "@/components/LoveNotes";
+import { addDays } from "@/lib/recur";
+import { daysUntil as daysTo, type Goal } from "@/components/Goals";
 import { useHousehold } from "@/components/Household";
 import { Mascot } from "@/components/Mascots";
 import { FamilyPresence } from "@/components/Presence";
@@ -16,13 +19,30 @@ import { useLive } from "@/lib/useLive";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
 function greeting(h: number) {
-  if (h < 11) return "สวัสดีตอนเช้า";
+  if (h < 5) return "ดึกแล้วนะ 🌙";
+  if (h < 11) return "อรุณสวัสดิ์ ☀️";
   if (h < 16) return "สวัสดีตอนบ่าย";
-  return "สวัสดีตอนเย็น";
+  if (h < 21) return "สวัสดีตอนเย็น";
+  return "ฝันดีนะ 🌙";
+}
+
+/** วันถัดไปที่นัดนี้เกิด (ภายใน ~1 ปี) */
+function nextOn(e: EventRow, today: string): string | null {
+  for (let i = 0; i <= 400; i++) { const d = addDays(today, i); if (occursOn(e, d)) return d; }
+  return null;
+}
+
+/** อารมณ์ตัวการ์ตูนตามงบเดือนนี้ */
+function mood(pct: number, dayOfMonth: number, daysInMonth: number) {
+  const pace = (dayOfMonth / daysInMonth) * 100;
+  if (pct >= 100) return { face: "😵", happy: false, text: "เกินงบแล้ว ไม่เป็นไรนะ เดือนหน้าสู้ใหม่" };
+  if (pct >= 80) return { face: "😅", happy: false, text: "ใกล้เต็มงบแล้ว ค่อยๆ ใช้นะ" };
+  if (pct <= pace) return { face: "😊", happy: true, text: "ใช้เงินชิลๆ อยู่ในงบ เก่งมาก" };
+  return { face: "🙂", happy: true, text: "ใช้เร็วกว่าปกตินิดนึง ยังไหวอยู่" };
 }
 
 export default function TodayPage() {
-  const { household, userId, people, isParent } = useHousehold();
+  const { household, userId, people, isParent, role } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -35,6 +55,8 @@ export default function TodayPage() {
   const items = useLive<ItemRow>("shopping_items", hid, () =>
     supabase().from("shopping_items").select("*").eq("done", false).order("created_at"));
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").eq("active", true));
+  const marked = useLive<EventRow>("events", hid, () => supabase().from("events").select("*").eq("countdown", true));
+  const goals = useLive<Goal>("savings_goals", isParent ? hid : undefined, () => supabase().from("savings_goals").select("*").eq("active", true).not("deadline", "is", null));
   const spend = useLive<ExpenseRow>("expenses", hid, () =>
     supabase().from("expenses").select("*").eq("private", false).gte("spent_at", start).lt("spent_at", end), [start]);
 
@@ -53,6 +75,12 @@ export default function TodayPage() {
   const kidEvent = todays.find((e) => people.get(e.who).kid);
   const budget = household.monthly_budget;
   const pct = budget > 0 ? Math.min(100, Math.round((monthTotal / budget) * 100)) : 0;
+  const rawPct = budget > 0 ? (monthTotal / budget) * 100 : 0;
+  const md = mood(rawPct, now.getDate(), new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
+  const countdowns = [
+    ...marked.rows.map((e) => { const d = nextOn(e, today); return d ? { key: e.id, title: e.title, days: daysTo(d), emoji: e.repeat === "yearly" ? "🎂" : "⏳", color: people.get(e.who).soft } : null; }),
+    ...goals.rows.map((g) => ({ key: g.id, title: g.title, days: daysTo(g.deadline!), emoji: g.emoji, color: "#DFF1E6" })),
+  ].filter((x): x is NonNullable<typeof x> => !!x && x.days >= 0 && x.days <= 365).sort((a, b) => a.days - b.days).slice(0, 3);
 
   return (
     <div className="flex flex-col gap-4">
@@ -73,6 +101,21 @@ export default function TodayPage() {
           <p className="text-sm">
             วันนี้{people.get(kidEvent.who).name}มี{kidEvent.title} {kidEvent.all_day ? "" : `ตอน ${thaiTime(kidEvent.starts_at)} `}อย่าลืมน้า
           </p>
+        </div>
+      )}
+
+      <LoveNotes />
+
+      {countdowns.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {countdowns.map((c) => (
+            <div key={c.key} className="flex min-w-[118px] flex-1 flex-col items-center rounded-3xl px-3 py-3 text-center" style={{ background: c.color }}>
+              <span className="text-2xl">{c.emoji}</span>
+              <span className="font-display text-2xl font-bold">{c.days === 0 ? "วันนี้!" : c.days}</span>
+              {c.days > 0 && <span className="-mt-1 text-xs">วัน</span>}
+              <span className="line-clamp-1 text-xs font-semibold">{c.title}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -117,7 +160,13 @@ export default function TodayPage() {
         </div>
         <span className="font-display text-[28px] font-bold">{baht(monthTotal)} <span className="text-base font-medium">บาท</span></span>
         {household.budget_enabled && (
-          <div className="h-3 overflow-hidden rounded-full bg-sand"><div className="h-3 rounded-full bg-[#E9A0B4]" style={{ width: `${pct}%` }} /></div>
+          <>
+            <div className="h-3 overflow-hidden rounded-full bg-sand"><div className="h-3 rounded-full bg-[#E9A0B4]" style={{ width: `${pct}%` }} /></div>
+            <div className="flex items-center gap-2">
+              <span className="relative"><Mascot kind={people.get(role).mascot} size={34} happy={md.happy} /><span className="absolute -right-1 -bottom-1 text-sm">{md.face}</span></span>
+              <span className="text-sm">{md.text}</span>
+            </div>
+          </>
         )}
         {pending > 0 && <span className="text-sm">มี {pending} รายการจากสลิปรอตรวจ</span>}
       </Link>

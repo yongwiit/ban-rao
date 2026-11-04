@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { SUPABASE_URL, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY } from "@/lib/config";
 
 type State = "loading" | "unsupported" | "ios-install" | "denied" | "off" | "on";
-type Prefs = { notify_new: boolean; notify_remind: boolean };
+type Prefs = { notify_new: boolean; notify_remind: boolean; notify_money: boolean; notify_daily: boolean };
 
 function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
@@ -21,7 +21,7 @@ async function currentSub(): Promise<PushSubscription | null> {
 
 export function PushSetup() {
   const [state, setState] = useState<State>("loading");
-  const [prefs, setPrefs] = useState<Prefs>({ notify_new: true, notify_remind: true });
+  const [prefs, setPrefs] = useState<Prefs>({ notify_new: true, notify_remind: true, notify_money: true, notify_daily: true });
   const [endpoint, setEndpoint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function PushSetup() {
       const sub = await currentSub();
       if (!sub) return setState("off");
       setEndpoint(sub.endpoint);
-      const { data } = await supabase().from("push_subscriptions").select("notify_new, notify_remind").eq("endpoint", sub.endpoint).maybeSingle();
+      const { data } = await supabase().from("push_subscriptions").select("notify_new, notify_remind, notify_money, notify_daily").eq("endpoint", sub.endpoint).maybeSingle();
       if (data) setPrefs(data as Prefs);
       setState(data ? "on" : "off");
     })().catch(() => setState("unsupported"));
@@ -116,6 +116,8 @@ export function PushSetup() {
           <p className="text-muted">เครื่องนี้รับแจ้งเตือนอยู่</p>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_new} onChange={() => toggle("notify_new")} />เมื่อมีคนเพิ่มหรือแก้นัด</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_remind} onChange={() => toggle("notify_remind")} />เตือนก่อนถึงนัด</label>
+          <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_money} onChange={() => toggle("notify_money")} />เมื่ออีกฝ่ายจดรายจ่าย และเมื่อใช้งบถึง 80% / เกินงบ</label>
+          <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_daily} onChange={() => toggle("notify_daily")} />2 ทุ่ม ชวนอัปสลิปของวันนี้</label>
           <p className="text-xs text-muted">นัดเห็นคนเดียว เตือนเฉพาะเจ้าของ · นัดของพ่อหรือแม่ เตือนเฉพาะคนนั้น · นัดของลูกหรือทั้งบ้าน เตือนทุกคน</p>
           <div className="flex gap-2">
             <button className="btn-soft flex-1" onClick={() => test()}>ทดสอบแจ้งเตือน</button>
