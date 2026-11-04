@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMemo, useState } from "react";
 import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
-import { CalendarLink } from "@/components/CalendarLink";
 import { Bear } from "@/components/Mascots";
 import { ChatIcon, ChevronIcon, EditIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
 import { PEOPLE, type Who } from "@/lib/family";
@@ -103,7 +104,7 @@ export default function CalendarPage() {
         ))}
       </section>
 
-      <CalendarLink />
+      <Link href="/settings" className="text-center text-sm text-muted underline">เชื่อมกับ Google / Samsung Calendar อยู่ในหน้าตั้งค่า</Link>
 
       <AddEvent open={adding} onClose={() => setAdding(false)} day={sel} />
       {editing && <AddEvent key={editing.id} open onClose={() => setEditing(null)} day={sel} editing={editing} mine={editing.created_by === userId} />}

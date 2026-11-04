@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useHousehold } from "@/components/Household";
 import { Chick, Family } from "@/components/Mascots";
-import { PlusIcon } from "@/components/Icons";
+import { GearIcon, PlusIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { daysUntil, nextDue } from "@/lib/bills";
@@ -60,7 +60,10 @@ export default function TodayPage() {
           <p className="text-sm text-muted">{thaiDate(now, { weekday: "long", day: "numeric", month: "short", year: "2-digit" })}</p>
           <h1 className="font-display text-[28px] font-bold">{greeting(Number(thaiTime(now).slice(0, 2)))}</h1>
         </div>
-        <Family size={44} />
+        <div className="flex items-center gap-2">
+          <Family size={44} />
+          <Link href="/settings" aria-label="ตั้งค่า" className="flex size-11 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(74,59,54,.06)]"><GearIcon size={20} /></Link>
+        </div>
       </header>
 
       {pearlEvent && (

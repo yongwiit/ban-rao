@@ -7,8 +7,6 @@ import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory } from "@/components/SpendHistory";
-import { InviteButtons } from "@/components/InviteButtons";
-import { LineLink } from "@/components/LineLink";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
 import { BILL_PERIODS, PAID_FROM, categoryLabel, isHouseholdSpend, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
@@ -18,7 +16,7 @@ import { useLive } from "@/lib/useLive";
 import type { BillRow, ExpenseRow, SettlementRow } from "@/lib/types";
 
 export default function MoneyPage() {
-  const { household, reloadHousehold, signOut } = useHousehold();
+  const { household, reloadHousehold } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
@@ -150,13 +148,7 @@ export default function MoneyPage() {
         ))}
       </section>
 
-      <LineLink />
-
-      <section className="card flex flex-col gap-2">
-        <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>
-        <InviteButtons code={household.join_code} />
-      </section>
-      <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ</button>
+      <Link href="/settings" className="text-center text-sm text-muted underline">ชวนเข้าบ้าน · จดผ่าน LINE อยู่ในหน้าตั้งค่า</Link>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "แก้รายการ" : "จดรายจ่าย"}>
         {editing && (
