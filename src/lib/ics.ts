@@ -3,6 +3,7 @@ import { PEOPLE, type Who } from "./family";
 export type FeedEvent = {
   id: string; title: string; starts_at: string; ends_at: string | null; all_day: boolean;
   who: Who; note: string | null; private: boolean; updated_at: string;
+  repeat?: string | null;
 };
 
 const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/([,;])/g, "\\$1");
@@ -42,6 +43,8 @@ export function buildIcs(events: FeedEvent[]): string {
     lines.push(`SUMMARY:${esc(`${e.title}${who && e.who !== "all" ? ` (${who})` : ""}`)}`);
     const desc = [e.note, e.private ? "🔒 เห็นคนเดียว" : null, "จากแอปบ้านเรา"].filter(Boolean).join("\n");
     lines.push(`DESCRIPTION:${esc(desc)}`);
+    const freq = { daily: "DAILY", weekly: "WEEKLY", monthly: "MONTHLY", yearly: "YEARLY" }[e.repeat ?? ""];
+    if (freq) lines.push(`RRULE:FREQ=${freq}`);
     if (e.private) lines.push("CLASS:PRIVATE");
     lines.push("END:VEVENT");
   }

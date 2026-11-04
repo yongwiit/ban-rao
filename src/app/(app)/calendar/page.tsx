@@ -14,7 +14,8 @@ import { dayKey, monthRange, thaiDate } from "@/lib/format";
 function thaiTime24(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
 }
-import { eventDays, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
+import { eventDaysIn, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
+import { REMIND_OPTIONS, REPEAT_LABEL, addDays, remindLabel, type Repeat } from "@/lib/recur";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { CommentRow, EventRow } from "@/lib/types";
@@ -37,9 +38,10 @@ export default function CalendarPage() {
 
   const byDay = useMemo(() => {
     const map: Record<string, EventRow[]> = {};
-    for (const e of events.rows) for (const d of eventDays(e)) (map[d] ??= []).push(e);
+    const last = addDays(dayKey(end), -1);
+    for (const e of events.rows) for (const d of eventDaysIn(e, dayKey(start), last)) (map[d] ??= []).push(e);
     return map;
-  }, [events.rows]);
+  }, [events.rows, start, end]);
 
   const firstDow = new Date(ym.y, ym.m, 1).getDay();
   const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
@@ -132,7 +134,7 @@ function EventCard({ e, day, mine, open, onToggle, onEdit, householdId }: { e: E
         <span className="w-1.5 self-stretch rounded-full" style={{ background: PEOPLE[e.who].color }} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-center gap-1.5 font-semibold">{e.title}{e.private && <LockIcon className="text-muted" />}</span>
-          <span className="text-sm text-muted">{eventWhen(e, day)} · {PEOPLE[e.who].name}{e.private ? " · เห็นคนเดียว" : ""}</span>
+          <span className="text-sm text-muted">{eventWhen(e, day)} · {PEOPLE[e.who].name}{e.private ? " · เห็นคนเดียว" : ""}{e.remind_before != null ? ` · 🔔 ${remindLabel(e)}` : ""}</span>
         </span>
         {comments.rows.length > 0 && <span className="flex items-center gap-1 text-xs text-muted"><ChatIcon />{comments.rows.length}</span>}
       </button>
@@ -166,6 +168,8 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
   const [who, setWho] = useState<Who>(editing?.who ?? "all");
   const [note, setNote] = useState(editing?.note ?? "");
   const [priv, setPriv] = useState(editing?.private ?? false);
+  const [repeat, setRepeat] = useState<Repeat>(editing?.repeat ?? "none");
+  const [remind, setRemind] = useState<number | null>(editing ? editing.remind_before : 60);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastDay, setLastDay] = useState(day);
@@ -178,13 +182,15 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
     const isAllDay = allDay || multi;
     const starts_at = new Date(`${date}T${isAllDay ? "00:00" : time}:00+07:00`).toISOString();
     const ends_at = multi ? new Date(`${endDate}T23:59:00+07:00`).toISOString() : null;
-    const row = { title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv };
+    const opt = REMIND_OPTIONS.find((o) => o.value === remind);
+    const remind_before = isAllDay && opt && !opt.allDay ? 0 : remind;
+    const row = { title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv, repeat: multi ? "none" : repeat, remind_before };
     const { error } = editing
       ? await supabase().from("events").update(row).eq("id", editing.id)
       : await supabase().from("events").insert(row);
     setBusy(false);
     if (error) return setErr(error.message);
-    setTitle(""); setNote(""); setPriv(false); setMulti(false); setErr(null);
+    setTitle(""); setNote(""); setPriv(false); setMulti(false); setRepeat("none"); setErr(null);
     onClose();
   }
 
@@ -208,6 +214,12 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
               <label className="flex flex-col gap-1 text-sm font-medium">เวลา<input className="field" type="time" disabled={allDay} value={time} onChange={(e) => setTime(e.target.value)} /></label>
             </div>
             <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />ทั้งวัน</label>
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="mb-1 text-sm font-medium">ซ้ำ</legend>
+              <div className="flex flex-wrap gap-2">
+                {(Object.keys(REPEAT_LABEL) as Repeat[]).map((r) => <button type="button" key={r} className="chip" aria-pressed={repeat === r} onClick={() => setRepeat(r)}>{REPEAT_LABEL[r]}</button>)}
+              </div>
+            </fieldset>
           </>
         )}
         <fieldset className="flex flex-col gap-1.5">
@@ -216,6 +228,14 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
             {WHO.map((w) => <button type="button" key={w} className="chip" aria-pressed={who === w} onClick={() => setWho(w)}>{PEOPLE[w].name}</button>)}
           </div>
         </fieldset>
+        <label className="flex flex-col gap-1 text-sm font-medium">แจ้งเตือน
+          <select className="field" value={remind === null ? "off" : String(remind)} onChange={(e) => setRemind(e.target.value === "off" ? null : Number(e.target.value))}>
+            {REMIND_OPTIONS.filter((o) => !(allDay || multi) || o.allDay).map((o) => (
+              <option key={String(o.value)} value={o.value === null ? "off" : String(o.value)}>{allDay || multi ? o.allDay : o.label}</option>
+            ))}
+          </select>
+          <span className="text-xs font-normal text-muted">{priv ? "นัดเห็นคนเดียว เตือนเฉพาะคุณ" : who === "dad" || who === "mom" ? `เตือนเฉพาะ${PEOPLE[who].name}` : "เตือนทุกคนในบ้าน"}</span>
+        </label>
         <label className="flex flex-col gap-1 text-sm font-medium">โน้ต<input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ไม่ใส่ก็ได้" /></label>
         {mine && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} /><LockIcon />เห็นคนเดียว (เช่น เซอร์ไพรส์ วันครบรอบ)</label>}
         {err && <p role="alert" className="text-sm text-rose">{err}</p>}

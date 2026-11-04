@@ -5,6 +5,7 @@ import { useHousehold } from "@/components/Household";
 import { InviteButtons } from "@/components/InviteButtons";
 import { LineLink } from "@/components/LineLink";
 import { CalendarLink } from "@/components/CalendarLink";
+import { PushSetup } from "@/components/PushSetup";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
 import { baht } from "@/lib/format";
@@ -23,6 +24,8 @@ export default function SettingsPage() {
         <h2 className="font-display text-[17px] font-semibold">{household.name || "บ้านเรา"}</h2>
         <p className="text-muted">คุณคือ {PEOPLE[role].name} · {partnerJoined ? "อยู่ครบทั้งสองคนแล้ว" : "ยังรออีกคนเข้าบ้าน"}</p>
       </section>
+
+      <PushSetup />
 
       <section className="card flex flex-col gap-2">
         <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>

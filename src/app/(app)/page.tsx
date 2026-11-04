@@ -10,8 +10,8 @@ import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { daysUntil, nextDue } from "@/lib/bills";
 import { supabase } from "@/lib/supabase";
 import { eventWhen, overlapFilter } from "@/lib/events";
+import { occursOn } from "@/lib/recur";
 import { isHouseholdSpend } from "@/lib/family";
-import { InviteButtons } from "@/components/InviteButtons";
 import { useLive } from "@/lib/useLive";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
@@ -22,7 +22,7 @@ function greeting(h: number) {
 }
 
 export default function TodayPage() {
-  const { household, partnerJoined } = useHousehold();
+  const { household } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -49,7 +49,8 @@ export default function TodayPage() {
         .sort((a, b) => a.due.getTime() - b.due.getTime()),
     [bills.rows],
   );
-  const pearlEvent = events.rows.find((e) => e.who === "pearl");
+  const todays = events.rows.filter((e) => occursOn(e, today));
+  const pearlEvent = todays.find((e) => e.who === "pearl");
   const budget = household.monthly_budget;
   const pct = budget > 0 ? Math.min(100, Math.round((monthTotal / budget) * 100)) : 0;
 
@@ -75,22 +76,13 @@ export default function TodayPage() {
         </div>
       )}
 
-      {!partnerJoined && (
-        <div className="card flex flex-col gap-1 bg-lavender">
-          <p className="font-display text-lg font-semibold">ชวนอีกคนเข้าบ้าน</p>
-          <p className="text-sm">ส่งลิงก์ให้อีกคนกด สมัครแล้วจะเข้าบ้านเดียวกันเลย</p>
-          <p className="font-display text-3xl font-bold tracking-[0.25em]">{household.join_code}</p>
-          <InviteButtons code={household.join_code} />
-        </div>
-      )}
-
       <section className="card flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-semibold">นัดวันนี้</h2>
           <Link href="/calendar" className="text-sm text-muted">ดูปฏิทิน</Link>
         </div>
-        {events.rows.length === 0 && <p className="text-sm text-muted">วันนี้ว่าง พักผ่อนได้เลย</p>}
-        {events.rows.map((e) => (
+        {todays.length === 0 && <p className="text-sm text-muted">วันนี้ว่าง พักผ่อนได้เลย</p>}
+        {todays.map((e) => (
           <div key={e.id} className="flex items-center gap-3">
             <span className="h-9 w-1.5 rounded-full" style={{ background: PEOPLE[e.who].color }} />
             <div className="flex flex-col">

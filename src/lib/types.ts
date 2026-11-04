@@ -1,8 +1,10 @@
+import type { Repeat } from "./recur";
 import type { BillPeriod, Category, PaidFrom, Role, Who } from "./family";
 
 export type EventRow = {
   id: string; title: string; starts_at: string; ends_at: string | null; all_day: boolean; who: Who;
   note: string | null; private: boolean; created_by: string;
+  repeat: Repeat; remind_before: number | null;
 };
 export type CommentRow = { id: string; event_id: string; body: string; created_by: string; created_at: string };
 export type ListRow = { id: string; name: string; sort: number };

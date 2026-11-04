@@ -1,9 +1,17 @@
 import type { EventRow } from "./types";
 import { dayKey, thaiDate, thaiTime } from "./format";
+import { REPEAT_LABEL, addDays, occursOn } from "./recur";
 
-/** เงื่อนไข Supabase: นัดที่คาบเกี่ยวช่วง [start, end) รวมนัดหลายวัน */
+/** เงื่อนไข Supabase: นัดที่คาบเกี่ยวช่วง [start, end) รวมนัดหลายวัน และนัดซ้ำ */
 export function overlapFilter(start: string): string {
-  return `ends_at.gte.${start},and(ends_at.is.null,starts_at.gte.${start})`;
+  return `ends_at.gte.${start},and(ends_at.is.null,starts_at.gte.${start}),repeat.neq.none`;
+}
+
+/** วันที่นัดนี้มี ภายในช่วง from..to (YYYY-MM-DD รวมทั้งสองวัน) รองรับนัดซ้ำ */
+export function eventDaysIn(e: EventRow, from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = from; d <= to && out.length < 400; d = addDays(d, 1)) if (occursOn(e, d)) out.push(d);
+  return out;
 }
 
 /** ทุกวัน (YYYY-MM-DD ตามเวลาไทย) ที่นัดนี้ครอบคลุม */
@@ -27,5 +35,6 @@ export function eventWhen(e: EventRow, onDay?: string): string {
     const i = onDay ? days.indexOf(onDay) : -1;
     return i >= 0 ? `${range} · วันที่ ${i + 1} จาก ${days.length}` : `${range} (${days.length} วัน)`;
   }
-  return e.all_day ? "ทั้งวัน" : thaiTime(e.starts_at);
+  const t = e.all_day ? "ทั้งวัน" : thaiTime(e.starts_at);
+  return e.repeat && e.repeat !== "none" ? `${t} · ${REPEAT_LABEL[e.repeat]}` : t;
 }
