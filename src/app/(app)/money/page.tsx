@@ -155,7 +155,7 @@ export default function MoneyPage() {
 
       <BillRequests />
 
-      <MonthCard scope={scope} spent={total} bills={activeBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} header={
+      <MonthCard scope={scope} spent={total} bills={activeBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} onRecord={setEditing} header={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button aria-label="เดือนก่อน" onClick={() => shift(-1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon dir="left" size={16} /></button>

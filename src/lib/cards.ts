@@ -89,6 +89,8 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
     cycleEnd: dateOf(open, card.statement_day),
     cycleStart: new Date(dateOf(prev, card.statement_day).getTime() + 864e5),
     cycleAmount: sum(open),
+    /** วันจ่ายของรอบที่กำลังใช้อยู่ (ยังไม่ตัด) */
+    cycleDue: dueOfStatement(card, open),
     cycleCharges,
     bill,
     installments,

@@ -9,33 +9,51 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
 import { cardBillsInMonth, type IncomeRow } from "@/lib/cards";
-import { CatIcon, useCategories } from "./Categories";
+import { useCategories } from "./Categories";
 import type { IconKey } from "@/lib/categoryIcons";
 import type { BillRow, ExpenseRow } from "@/lib/types";
+import type { ExpenseDraft } from "./ExpenseForm";
 
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 const short = (d: Date) => thaiDate(d, { day: "numeric", month: "short" });
 
-type Reserve = { key: string; date: Date | null; label: string; amount: number; icon: IconKey; note?: string };
+type Item = { key: string; date: Date | null; label: string; amount: number; icon: IconKey; note?: string; paid: boolean; tap?: () => void };
+type PaidRow = { card_id: string; ym: string; amount: number | null };
+
+/** ป้ายวันที่อ่านง่าย: วันนี้ / พรุ่งนี้ / อีก N วัน / เลยมา N วัน */
+function dueChip(date: Date | null, paid: boolean, isThisMonth: boolean): { text: string; tone: string } {
+  if (paid) return { text: "จ่ายแล้ว", tone: "text-[#3F8A5F]" };
+  if (!date) return { text: "ในเดือนนี้", tone: "text-muted" };
+  if (!isThisMonth) return { text: short(date), tone: "text-muted" };
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const d = new Date(date); d.setHours(0, 0, 0, 0);
+  const n = Math.round((d.getTime() - t.getTime()) / 86_400_000);
+  if (n === 0) return { text: "วันนี้", tone: "bg-butter font-semibold" };
+  if (n === 1) return { text: "พรุ่งนี้", tone: "bg-butter" };
+  if (n > 1) return { text: `อีก ${n} วัน`, tone: "text-muted" };
+  return { text: `เลยมา ${-n} วัน`, tone: "bg-rose/15 font-semibold text-rose" };
+}
 
 /**
- * การ์ด "เดือนนี้": รายได้ (หรืองบ) − ใช้ไปแล้ว − ต้องกันไว้ = เหลือใช้ได้จริง
- * ต้องกันไว้ = ค่าใช้จ่ายประจำรายเดือนที่ยังไม่ได้จด + บิลบัตรที่ยังไม่ถึงวันจ่าย (แท็บของฉัน)
+ * การ์ด "เดือนนี้": รายได้ (หรืองบ) − ใช้ไปแล้ว − ยังต้องจ่าย = เหลือใช้ได้จริง
+ * บิลเดือนนี้ = ค่าใช้จ่ายประจำรายเดือน + บิลบัตร (แท็บของฉัน) ติ๊กได้ว่าจ่ายแล้ว
+ * ค่าใช้จ่ายประจำ: ติ๊ก = จดเป็นรายจ่าย · บิลบัตร: ติ๊ก = บันทึกว่าจ่ายรอบนี้แล้ว (card_bill_paid)
  */
-export function MonthCard({ scope, spent, bills, monthRows, ym, header, onBudget }: {
+export function MonthCard({ scope, spent, bills, monthRows, ym, header, onBudget, onRecord }: {
   scope: "home" | "mine"; spent: number; bills: BillRow[]; monthRows: ExpenseRow[]; ym: { y: number; m: number };
-  header: React.ReactNode; onBudget: () => void;
+  header: React.ReactNode; onBudget: () => void; onRecord: (d: ExpenseDraft) => void;
 }) {
   const { household, people, userId, role } = useHousehold();
   const cats = useCategories();
   const hid = household.id;
   const incomes = useLive<IncomeRow>("incomes", hid, () => supabase().from("incomes").select("*").order("created_at"));
   const { cards, charges } = useCards(scope === "mine" ? hid : undefined);
+  const paidQ = useLive<PaidRow>("card_bill_paid", scope === "mine" ? hid : undefined, () => supabase().from("card_bill_paid").select("card_id,ym,amount"));
   const [open, setOpen] = useState(false);
   const now = new Date();
-  const todayKey = dayKey(now);
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const isPast = ym.y * 12 + ym.m < now.getFullYear() * 12 + now.getMonth();
+  const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
 
   const myIncome = (i: IncomeRow) => i.created_by === userId || i.who === role;
   const inc = incomes.rows.filter((i) => (scope === "home" ? !i.private : myIncome(i)));
@@ -43,28 +61,39 @@ export function MonthCard({ scope, spent, bills, monthRows, ym, header, onBudget
   const useBudget = scope === "home" && household.budget_enabled && household.monthly_budget > 0;
   const base = useBudget ? Number(household.monthly_budget) : income;
 
-  // บิลบัตรที่ครบจ่ายเดือนนี้: ถึงวันแล้ว = จ่ายแล้ว, ยังไม่ถึง = ต้องกันไว้
+  async function tickCard(cardId: string, amount: number, paid: boolean) {
+    if (paid) await supabase().from("card_bill_paid").delete().eq("card_id", cardId).eq("ym", ymKey);
+    else await supabase().from("card_bill_paid").insert({ card_id: cardId, ym: ymKey, amount });
+    paidQ.refresh();
+  }
+
+  // บิลบัตรที่ครบจ่ายเดือนนี้ (เดือนที่ผ่านไปแล้วถือว่าจ่ายแล้ว)
   const myCards = scope === "mine" ? cards.filter((c) => c.owner === role || c.created_by === userId) : [];
   const cardBills = cardBillsInMonth(myCards, charges, ym.y, ym.m);
-  const cardPaid = cardBills.filter((b) => isPast || dayKey(b.due) < todayKey).reduce((s, b) => s + b.amount, 0);
-  const reserves: Reserve[] = [];
+  const items: Item[] = [];
+  for (const b of cardBills) {
+    const paid = isPast || paidQ.rows.some((p) => p.card_id === b.card.id && p.ym === ymKey);
+    items.push({ key: `card-${b.card.id}`, date: b.due, label: `บิลบัตร ${b.card.name}`, amount: b.amount, icon: "bill", paid, tap: isPast ? undefined : () => tickCard(b.card.id, b.amount, paid) });
+  }
   if (!isPast) {
-    for (const b of cardBills) if (dayKey(b.due) >= todayKey || !isThisMonth)
-      reserves.push({ key: `card-${b.card.id}`, date: b.due, label: `บิลบัตร ${b.card.name}`, amount: b.amount, icon: "bill" });
     const dim = new Date(ym.y, ym.m + 1, 0).getDate();
     for (const b of bills) {
-      if (b.period !== "monthly" || monthRows.some((e) => e.bill_id === b.id)) continue;
-      // ถึงวันแล้วแต่ยังไม่จด (ไม่ใช่ยอดไม่คงที่) ถือว่าจ่ายไปก่อนเริ่มใช้แอป ไม่นับ
-      if (isThisMonth && !b.variable && b.due_day != null && b.due_day < now.getDate()) continue;
+      if (b.period !== "monthly") continue;
+      const rec = monthRows.find((e) => e.bill_id === b.id);
       const c = cats.get(b.category ?? "bill");
-      reserves.push({
-        key: `bill-${b.id}`, date: b.due_day ? new Date(ym.y, ym.m, Math.min(b.due_day, dim)) : null, label: b.name, amount: Number(b.amount), icon: c.icon,
-        note: b.variable ? "ยอดประมาณ" : b.auto_record ? "จดให้อัตโนมัติ" : undefined,
+      const date = b.due_day ? new Date(ym.y, ym.m, Math.min(b.due_day, dim)) : null;
+      items.push({
+        key: `bill-${b.id}`, date, label: b.name, amount: rec ? Number(rec.amount) : Number(b.amount), icon: c.icon, paid: !!rec,
+        note: rec ? undefined : b.variable ? "ยอดประมาณ" : b.auto_record ? (date && b.auto_from && dayKey(date) < b.auto_from ? "เดือนนี้กดจดเอง เดือนหน้าจดให้" : "จดให้อัตโนมัติ") : undefined,
+        tap: rec ? undefined : () => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(isThisMonth ? now : date ?? new Date(ym.y, ym.m, 1)), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id }),
       });
     }
-    reserves.sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
   }
-  const reserve = reserves.reduce((s, r) => s + r.amount, 0);
+  const byDate = (a: Item, b: Item) => (a.date?.getTime() ?? 9e15) - (b.date?.getTime() ?? 9e15);
+  items.sort((a, b) => (a.paid === b.paid ? byDate(a, b) : a.paid ? 1 : -1));
+  const cardPaid = items.filter((i) => i.paid && i.key.startsWith("card-")).reduce((s, i) => s + i.amount, 0);
+  const paidCount = items.filter((i) => i.paid).length;
+  const reserve = items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0);
   const used = spent + cardPaid;
   const left = base - used - reserve;
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
@@ -101,22 +130,37 @@ export function MonthCard({ scope, spent, bills, monthRows, ym, header, onBudget
               <span>{useBudget ? "งบเดือนนี้" : scope === "home" ? "รายได้บ้าน" : "รายได้ของฉัน"} <span className="text-xs text-muted underline">{useBudget ? "ปรับงบ" : "แก้"}</span></span><span>{baht(base)}</span>
             </button>
             <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว{cardPaid > 0 ? " (รวมบิลบัตรที่จ่ายแล้ว)" : ""}</span><span>− {baht(used)} · {pct(used, base)}%</span></span>
-            {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ต้องกันไว้</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
+            {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ยังต้องจ่าย</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
           </div>
         </>
       )}
-      {reserves.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-2xl bg-white/75 p-3">
-          <span className="text-sm font-semibold">ต้องกันเงินไว้{isThisMonth ? "เดือนนี้" : ""} {baht(reserve)} บาท</span>
-          {(showAll ? reserves : reserves.slice(0, 5)).map((r) => (
-            <span key={r.key} className="flex items-center gap-2 text-sm">
-              <CatIcon icon={r.icon} size={28} />
-              <span className="w-14 shrink-0 text-xs text-muted">{r.date ? short(r.date) : "ในเดือน"}</span>
-              <span className="min-w-0 flex-1 truncate">{r.label}{r.note ? <span className="text-xs text-muted"> · {r.note}</span> : null}</span>
-              <span className="shrink-0">{baht(r.amount)}</span>
-            </span>
-          ))}
-          {reserves.length > 5 && <button className="self-start text-xs text-muted underline" onClick={() => setShowAll(!showAll)}>{showAll ? "ย่อ" : `ดูอีก ${reserves.length - 5} รายการ`}</button>}
+      {items.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-2xl bg-white/75 p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold">บิล{isThisMonth ? "เดือนนี้" : "เดือนนั้น"}</span>
+            <span className="text-xs text-muted">จ่ายแล้ว {paidCount}/{items.length}</span>
+          </div>
+          {reserve > 0 && <span className="text-xs text-muted">เหลือต้องจ่าย <b className="text-cocoa">{baht(reserve)}</b> บาท · แตะวงกลมเมื่อจ่ายแล้ว</span>}
+          {(showAll ? items : items.slice(0, 6)).map((r) => {
+            const chip = dueChip(r.date, r.paid, isThisMonth);
+            return (
+              <button key={r.key} type="button" disabled={!r.tap} onClick={r.tap}
+                className={`flex min-h-11 items-center gap-2.5 text-left text-sm ${r.paid ? "opacity-60" : ""}`}
+                aria-label={r.paid ? `${r.label} จ่ายแล้ว${r.tap ? " แตะเพื่อยกเลิก" : ""}` : `ติ๊กว่าจ่าย ${r.label} แล้ว`}>
+                <span className={`flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${r.paid ? "bg-mint text-[#3F8A5F]" : "border-2 border-cocoa/25 bg-white"}`}>{r.paid ? "✓" : ""}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className={`truncate ${r.paid ? "line-through" : ""}`}>{r.label}</span>
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className={`rounded-md px-1.5 ${chip.tone}`}>{chip.text}</span>
+                    {r.date && isThisMonth && !r.paid && <span className="text-muted">{short(r.date)}</span>}
+                    {r.note && <span className="text-muted">· {r.note}</span>}
+                  </span>
+                </span>
+                <span className={`shrink-0 ${r.paid ? "line-through" : "font-semibold"}`}>{baht(r.amount)}</span>
+              </button>
+            );
+          })}
+          {items.length > 6 && <button className="self-start text-xs text-muted underline" onClick={() => setShowAll(!showAll)}>{showAll ? "ย่อ" : `ดูอีก ${items.length - 6} รายการ`}</button>}
         </div>
       )}
       {scope === "mine" && <span className="text-xs text-muted">นับเฉพาะของคุณ: รายการ &quot;จ่ายส่วนตัว&quot;/&quot;เห็นคนเดียว&quot; บัตรของคุณ และค่าใช้จ่ายประจำส่วนตัว</span>}

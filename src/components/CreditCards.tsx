@@ -40,10 +40,20 @@ function billText(c: ChargeRow, name: (k: string) => string): string {
 export function CreditCards() {
   const { household } = useHousehold();
   const { cards, charges, refresh } = useCards(household.id);
+  const paidQ = useLive<{ card_id: string; ym: string }>("card_bill_paid", household.id, () => supabase().from("card_bill_paid").select("card_id,ym"));
   const today = dayKey(new Date());
   const [openId, setOpenId] = useState<string | null>(null);
   const [edit, setEdit] = useState<CardRow | "new" | null>(null);
   const open = cards.find((c) => c.id === openId) ?? null;
+  const [view, setView] = useState<"now" | "next">("now");
+  const rows = cards.map((card) => {
+    const mine = charges.filter((c) => c.card_id === card.id);
+    const s = cardSummary(card, mine, today);
+    const paid = s.bill.closed && paidQ.rows.some((p) => p.card_id === card.id && p.ym === dayKey(s.bill.due).slice(0, 7));
+    return { card, mine, s, paid };
+  });
+  // รอบนี้: บัตรที่จ่ายแล้ว/ไม่มีบิลค้างไปอยู่ล่าง
+  if (view === "now") rows.sort((a, b) => Number(a.paid || !a.s.bill.closed) - Number(b.paid || !b.s.bill.closed));
 
   return (
     <section className="card flex flex-col gap-3">
@@ -51,12 +61,19 @@ export function CreditCards() {
         <h2 className="font-display text-[17px] font-semibold">💳 บัตรเครดิตของฉัน</h2>
         <button onClick={() => setEdit("new")} className="min-h-9 px-1 text-sm text-muted">+ เพิ่มบัตร</button>
       </div>
+      {cards.length > 0 && (
+        <div className="flex rounded-2xl bg-sand p-1 text-sm" role="tablist">
+          {([["now", "บิลรอบนี้"], ["next", "รอบถัดไป"]] as const).map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={view === k} onClick={() => setView(k)} className={`min-h-9 flex-1 rounded-xl ${view === k ? "bg-white font-semibold shadow-sm" : "text-muted"}`}>{l}</button>
+          ))}
+        </div>
+      )}
       {cards.length === 0 && <p className="text-sm text-muted">เพิ่มบัตร ใส่วันตัดรอบกับวันจ่าย แล้วจดว่ารูดอะไรไป (จ่ายเต็ม ผ่อน หรือ subscription รายเดือน/ปี) · บัตรเห็นเฉพาะคุณ ถ้าจะให้อีกฝ่ายช่วยจ่าย กดเรียกเก็บแล้วรอเขายืนยัน</p>}
-      {cards.map((card) => {
-        const mine = charges.filter((c) => c.card_id === card.id);
-        const s = cardSummary(card, mine, today);
+      {rows.map(({ card, mine, s, paid }) => {
         const d = daysTo(s.bill.due, today);
         const pending = mine.filter((c) => c.bill_status === "pending").length;
+        const next = view === "next";
+        const nothing = !next && !s.bill.closed;
         return (
           <button key={card.id} onClick={() => setOpenId(card.id)} className="flex flex-col gap-1 rounded-2xl p-3 text-left" style={{ background: softOf(card.color) }}>
             <span className="flex items-center gap-2">
@@ -64,10 +81,24 @@ export function CreditCards() {
               <span className="flex-1 truncate font-semibold">{card.name}{card.last4 ? ` ··${card.last4}` : ""}</span>
               {pending > 0 && <span className="rounded-lg bg-butter px-1.5 py-0.5 text-[11px]">รอยืนยัน {pending}</span>}
             </span>
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="text-sm">{s.bill.closed ? "ต้องจ่าย" : "บิลรอบถัดไป"} <b className="font-display text-xl">{baht(s.bill.amount)}</b> บาท</span>
-              <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold ${s.bill.closed && s.bill.amount > 0 && d <= 3 ? "bg-butter" : "bg-white/70"}`}>จ่าย {day(s.bill.due)} · {inDays(d)}</span>
-            </span>
+            {next ? (
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="text-sm">รอบถัดไป <b className="font-display text-xl">{baht(s.cycleAmount)}</b> บาท</span>
+                <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัด {day(s.cycleEnd)} · จ่าย {day(s.cycleDue)}</span>
+              </span>
+            ) : nothing ? (
+              <span className="flex items-baseline justify-between gap-2 opacity-70">
+                <span className="text-sm">รอบนี้ไม่มีบิลค้าง</span>
+                <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัดรอบ {day(s.cycleEnd)}</span>
+              </span>
+            ) : (
+              <span className={`flex items-baseline justify-between gap-2 ${paid ? "opacity-60" : ""}`}>
+                <span className="text-sm">{paid ? "จ่ายแล้ว" : "ต้องจ่าย"} <b className={`font-display text-xl ${paid ? "line-through" : ""}`}>{baht(s.bill.amount)}</b> บาท</span>
+                {paid
+                  ? <span className="shrink-0 rounded-lg bg-mint px-2 py-0.5 text-xs font-semibold text-[#3F8A5F]">✓ จ่ายแล้ว</span>
+                  : <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold ${s.bill.amount > 0 && d <= 3 ? "bg-butter" : "bg-white/70"}`}>จ่าย {day(s.bill.due)} · {inDays(d)}</span>}
+              </span>
+            )}
             <span className="text-xs text-muted">
               รอบนี้ใช้ไป {baht(s.cycleAmount)} (ตัด {day(s.cycleEnd)})
               {s.installments.length > 0 ? ` · ผ่อนอยู่ ${s.installments.length} รายการ เดือนละ ${baht(s.monthlyInstallments)}` : ""}
