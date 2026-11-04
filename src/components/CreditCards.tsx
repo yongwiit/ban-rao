@@ -97,7 +97,7 @@ function CardDetail({ card, charges, today, onEditCard, refresh }: { card: CardR
   const [form, setForm] = useState<ChargeRow | "new" | null>(null);
   const owedBy = new Map<string, number>();
   for (const c of charges) {
-    if (c.bill_to && c.bill_mode !== "home" && c.bill_status !== "rejected" && !c.bill_paid && !isSub(c)) owedBy.set(c.bill_to, (owedBy.get(c.bill_to) ?? 0) + Number(c.bill_amount ?? c.amount));
+    if (c.bill_to && c.bill_mode !== "home" && c.bill_status !== "rejected" && c.bill_status !== "pending" && !c.bill_paid && !isSub(c)) owedBy.set(c.bill_to, (owedBy.get(c.bill_to) ?? 0) + Number(c.bill_amount ?? c.amount));
   }
   const list = filter === "cycle" ? s.cycleCharges : filter === "inst" ? s.installments : filter === "sub" ? charges.filter(isSub) : filter === "bill" ? charges.filter((c) => c.bill_to) : charges.slice(0, 60);
   const subMonthly = s.subs.reduce((t, c) => t + (c.repeat === "yearly" ? Number(c.amount) / 12 : Number(c.amount)), 0);

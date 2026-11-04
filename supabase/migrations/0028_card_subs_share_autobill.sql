@@ -86,7 +86,7 @@ begin
     case when x.bill_mode = 'home' then x.amount else coalesce(x.bill_amount, x.amount) end,
     (occ::timestamp + time '12:00') at time zone 'Asia/Bangkok',
     x.title, coalesce(x.category, 'other'), payer, false, 'confirmed', who, x.id,
-    'รูดบัตร' || c.name || ' ของ' || coalesce(owner_name, 'คนในบ้าน')
+    'รูด' || case when c.name like 'บัตร%' then '' else 'บัตร' end || c.name || ' ของ' || coalesce(owner_name, 'คนในบ้าน')
       || case when x.months > 1 then ' · ผ่อน ' || x.months || ' เดือน' else '' end
       || case when x.repeat <> 'none' then ' · subscription' else '' end)
   returning id into eid;

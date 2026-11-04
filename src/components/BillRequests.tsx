@@ -54,7 +54,7 @@ export function BillRequests() {
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate font-semibold">{r.title}</span>
                 <span className="text-xs text-muted">
-                  {from}รูดบัตร{r.card_name} · {thaiDate(r.charged_on, { day: "numeric", month: "short" })} · {cat.label}
+                  {from}รูด{r.card_name.startsWith("บัตร") ? "" : "บัตร"}{r.card_name} · {thaiDate(r.charged_on, { day: "numeric", month: "short" })} · {cat.label}
                   {r.repeat === "monthly" ? " · ทุกเดือน" : r.repeat === "yearly" ? " · ทุกปี" : r.months > 1 ? ` · ผ่อน ${r.months} เดือน` : ""}
                 </span>
               </span>
