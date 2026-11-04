@@ -253,6 +253,31 @@ async function onNote(id: string) {
   return { sent };
 }
 
+/** บัตรเครดิต: พ่อแม่กดแจ้งคนในบ้านเรื่องรายการที่รูดบัตร (เรียกเก็บเต็ม/บางส่วน) */
+async function onCardNudge(id: string) {
+  const { data: n } = await db.from("card_nudges").select("*").eq("id", id).maybeSingle();
+  if (!n || Date.now() - new Date(n.created_at).getTime() > 5 * 60_000) return { sent: 0 };
+  const { data: c } = await db.from("card_charges").select("*").eq("id", n.charge_id).maybeSingle();
+  if (!c) return { sent: 0 };
+  const { data: card } = await db.from("credit_cards").select("name").eq("id", c.card_id).maybeSingle();
+  const { data: mem } = await db.from("members").select("user_id, role").eq("household_id", n.household_id);
+  const NAMES = await names(n.household_id);
+  const from = (mem ?? []).find((m) => m.user_id === n.from_user);
+  const by = from ? NAMES[from.role] ?? "คนในบ้าน" : "คนในบ้าน";
+  const to = (mem ?? []).filter((m) => m.role === n.to_who && m.user_id !== n.from_user).map((m) => m.user_id);
+  const kid = n.to_who !== "dad" && n.to_who !== "mom";
+  const owe = c.bill_to === n.to_who && c.bill_amount ? Number(c.bill_amount) : null;
+  const months = Number(c.months);
+  const what = owe != null
+    ? `ฝากจ่ายค่า${c.title} ${bahtTh(owe)} บาท${months > 1 ? ` (ผ่อน ${months} เดือน เดือนละ ${bahtTh(owe / months)})` : ""}${c.bill_paid ? " · จ่ายแล้ว ขอบคุณนะ" : ""}`
+    : `${c.title} ${bahtTh(Number(c.amount))} บาท${months > 1 ? ` ผ่อน ${months} เดือน` : ""}`;
+  const sent = await send(to, "notify_money", {
+    title: `💳 ${by}ฝากบอกเรื่องบัตร${card?.name ? ` ${card.name}` : ""}`, body: what,
+    url: kid ? "/" : "/money", tag: `card-${c.id}`,
+  });
+  return { sent };
+}
+
 /** ส่งหัวใจ 💗 ถึงคนในบ้าน */
 async function onHeart(id: string) {
   const { data: h } = await db.from("hearts").select("id, from_user, to_user, household_id, created_at").eq("id", id).maybeSingle();
@@ -315,6 +340,7 @@ Deno.serve(async (req) => {
     else if ((body.type === "new" || body.type === "change") && typeof body.event_id === "string") out = await onChange(body.event_id, body.type);
     else if (body.type === "expense" && typeof body.expense_id === "string") out = await onExpense(body.expense_id);
     else if (body.type === "note" && typeof body.note_id === "string") out = await onNote(body.note_id);
+    else if (body.type === "card_nudge" && typeof body.nudge_id === "string") out = await onCardNudge(body.nudge_id);
     else if (body.type === "heart" && typeof body.heart_id === "string") out = await onHeart(body.heart_id);
     else if (body.type === "star" && typeof body.log_id === "string") out = await onStar(body.log_id);
     else if (body.type === "test" && typeof body.endpoint === "string") out = await onTest(body.endpoint);

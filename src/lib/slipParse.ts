@@ -22,7 +22,11 @@ const MONEY = /(\d{1,3}(?:[,\s]\d{3})+|\d+)[.,](\d{2})(?!\d)/g;
 const GUESS: [RegExp, Category][] = [
   [/ข้าว|กาแฟ|ก๋วยเตี๋ยว|อาหาร|ขนม|ร้านอาหาร|ส้มตำ|ชาบู|บุฟเฟ่|grab|lineman|foodpanda|robinhood|cafe|coffee|คอฟฟี่|คาเฟ่|ครัว|ร้านข้าว|ก๋วยจั๊บ|หมูกระทะ|starbucks|amazon/i, "food"],
   [/น้ำมัน|ปตท|ptt|เชลล์|shell|บางจาก|caltex|คาลเท็กซ์|ทางด่วน|easy ?pass|m-?flow|ล้างรถ|ซ่อมรถ|ยางรถ|ที่จอด/i, "car"],
-  [/การไฟฟ้า|ไฟฟ้า|การประปา|ประปา|ais|true|dtac|3bb|nt |ประกัน|insurance|ค่าเช่า|นิติบุคคล/i, "bill"],
+  [/การไฟฟ้า|ไฟฟ้า|กฟน|กฟภ|\bmea\b|\bpea\b/i, "power"],
+  [/การประปา|ประปา|กปน|กปภ|\bmwa\b|\bpwa\b/i, "water"],
+  [/3bb|ais ?fibre|true ?online|ทรูออนไลน์|อินเทอร์เน็ต|internet|nt |fiber|ไฟเบอร์/i, "net"],
+  [/ais|true|dtac|ทรูมูฟ|โทรศัพท์/i, "phone"],
+  [/ประกัน|insurance|ค่าเช่า|นิติบุคคล/i, "bill"],
   [/โรงเรียน|school|อนุบาล|kids|คิดส์|ของเล่น|toy/i, "pearl"],
   [/lotus|โลตัส|big ?c|บิ๊กซี|makro|แม็คโคร|แม็กซ์แวลู|max ?value|7-?eleven|เซเว่น|cp ?all|ซีพี ออลล์|tops|ท็อปส์|villa|วิลล่า|ซูเปอร์|super|homepro|โฮมโปร|ไทวัสดุ|ikea|อิเกีย|watsons|วัตสัน|boots|ร้านยา|เภสัช/i, "home"],
 ];

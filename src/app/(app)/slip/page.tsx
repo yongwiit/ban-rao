@@ -12,7 +12,7 @@ import { dayKey, thaiTime } from "@/lib/format";
 type SlipResult = {
   is_slip: boolean; kind?: "slip" | "receipt"; amount: number | null; datetime: string | null; recipient: string | null;
   bank: string | null; reference: string | null;
-  category_guess: "home" | "food" | "pearl" | "bill" | "car" | "gift" | "other";
+  category_guess: string;
 };
 
 type Item = { key: string; preview: string; state: "reading" | "ready" | "saved" | "error"; draft?: ExpenseDraft; msg?: string };

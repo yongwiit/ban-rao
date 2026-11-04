@@ -52,6 +52,10 @@ export const CATEGORIES = {
   food: "อาหาร",
   pearl: "ของลูก",
   bill: "บิล",
+  water: "ค่าน้ำ",
+  power: "ค่าไฟ",
+  net: "ค่าเน็ต",
+  phone: "ค่าโทรศัพท์",
   car: "รถ",
   gift: "ของขวัญ",
   other: "อื่นๆ",
@@ -67,10 +71,20 @@ export function isHouseholdSpend(e: { private: boolean; paid_from: string }): bo
 }
 
 export const BILL_PERIODS = {
-  monthly: { label: "ทุกเดือน", perYear: 12 },
-  yearly: { label: "ปีละครั้ง", perYear: 1 },
-  term: { label: "ต่อเทอม (ปีละ 2)", perYear: 2 },
+  daily: { label: "ทุกวัน", perYear: 365, unit: "วัน" },
+  monthly: { label: "ทุกเดือน", perYear: 12, unit: "เดือน" },
+  yearly: { label: "ปีละครั้ง", perYear: 1, unit: "ปี" },
+  term: { label: "ต่อเทอม (ปีละ 2)", perYear: 2, unit: "เทอม" },
 } as const;
+/** ชื่อค่าใช้จ่ายประจำที่กดเลือกได้เลย */
+export const FIXED_COST_PRESETS = ["ค่าน้ำ", "ค่าไฟ", "ค่าเน็ต", "ค่าโทรศัพท์", "ค่าบ้าน/ค่าเช่า", "ค่าผ่อนรถ", "ประกัน", "ค่าเทอม", "ค่าขนมลูก", "ค่าเดินทาง"];
+/** ค่าสาธารณูปโภค (หมวดรายจ่าย) */
+export const UTILITIES = [
+  { key: "water", emoji: "💧" },
+  { key: "power", emoji: "⚡" },
+  { key: "net", emoji: "📶" },
+  { key: "phone", emoji: "📱" },
+] as const;
 export type BillPeriod = keyof typeof BILL_PERIODS;
 
 /** เงินที่ต้องกันไว้ต่อเดือนสำหรับบิลหนึ่งรายการ */

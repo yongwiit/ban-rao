@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
 import { LoveNotes } from "@/components/LoveNotes";
 import { addDays } from "@/lib/recur";
 import { daysUntil as daysTo, type Goal } from "@/components/Goals";
@@ -16,6 +15,8 @@ import { eventWhen, overlapFilter } from "@/lib/events";
 import { occursOn } from "@/lib/recur";
 import { isHouseholdSpend } from "@/lib/family";
 import { useLive } from "@/lib/useLive";
+import { useCards } from "@/components/CreditCards";
+import { cardSummary } from "@/lib/cards";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
 function greeting(h: number) {
@@ -62,15 +63,15 @@ export default function TodayPage() {
 
   const monthTotal = spend.rows.filter(isHouseholdSpend).reduce((s, e) => s + Number(e.amount), 0);
   const pending = spend.rows.filter((e) => e.status === "pending").length;
-  const dueSoon = useMemo(
-    () =>
-      bills.rows
-        .filter((b) => b.due_day)
-        .map((b) => ({ ...b, due: nextDue(b.due_day!) }))
-        .filter((b) => daysUntil(b.due) <= 7)
-        .sort((a, b) => a.due.getTime() - b.due.getTime()),
-    [bills.rows],
-  );
+  const cards = useCards(isParent ? hid : undefined);
+  const dueSoon = [
+        ...bills.rows.filter((b) => b.due_day).map((b) => ({ name: b.name, due: nextDue(b.due_day!) })),
+        // บิลบัตรเครดิตที่ตัดรอบแล้วและยังมียอด
+        ...cards.cards.map((c) => ({ c, s: cardSummary(c, cards.charges.filter((x) => x.card_id === c.id), today) }))
+          .filter(({ s }) => s.bill.closed && s.bill.amount > 0).map(({ c, s }) => ({ name: `💳${c.name}`, due: s.bill.due })),
+  ]
+    .filter((b) => daysUntil(b.due) <= 7)
+    .sort((a, b) => a.due.getTime() - b.due.getTime());
   const todays = events.rows.filter((e) => occursOn(e, today));
   const kidEvent = todays.find((e) => people.get(e.who).kid);
   const budget = household.monthly_budget;

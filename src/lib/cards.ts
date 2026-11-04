@@ -1,0 +1,98 @@
+// บัตรเครดิต: คำนวณรอบตัดบัตร วันครบกำหนดจ่าย และงวดผ่อน (ไม่เชื่อมธนาคาร คิดจากข้อมูลที่จดเอง)
+
+export type CardRow = {
+  id: string; name: string; bank: string | null; last4: string | null; owner: string;
+  statement_day: number; due_day: number; credit_limit: number | null; color: string;
+  private: boolean; active: boolean; created_by: string; created_at: string;
+};
+export type ChargeRow = {
+  id: string; card_id: string; title: string; amount: number; charged_on: string; months: number;
+  category: string | null; bill_to: string | null; bill_amount: number | null; bill_paid: boolean;
+  note: string | null; created_by: string; created_at: string;
+};
+export type IncomeRow = { id: string; who: string; label: string; amount: number; private: boolean; created_by: string };
+
+/** เดือนเป็นเลขลำดับ (ปี*12 + เดือน 0-11) เพื่อเทียบรอบง่ายๆ */
+type Mi = number;
+const mi = (y: number, m: number): Mi => y * 12 + m;
+const daysIn = (i: Mi) => new Date(Math.floor(i / 12), (i % 12) + 1, 0).getDate();
+/** วันที่ day ของเดือน i (ถ้าเดือนนั้นไม่มีวันนั้น ใช้วันสุดท้าย) */
+export function dateOf(i: Mi, day: number): Date {
+  return new Date(Math.floor(i / 12), i % 12, Math.min(day, daysIn(i)));
+}
+function parse(ymd: string): { y: number; m: number; d: number } {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return { y, m: m - 1, d };
+}
+const todayParts = (today: string) => parse(today);
+const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** วันครบกำหนดจ่ายของบิลที่ตัดรอบเดือน i (ถ้าวันจ่ายน้อยกว่าหรือเท่าวันตัด = เดือนถัดไป) */
+export function dueOfStatement(card: Pick<CardRow, "statement_day" | "due_day">, i: Mi): Date {
+  return dateOf(card.due_day > card.statement_day ? i : i + 1, card.due_day);
+}
+/** รอบบิลแรกที่รายการนี้เข้า */
+function firstStatement(card: Pick<CardRow, "statement_day">, chargedOn: string): Mi {
+  const { y, m, d } = parse(chargedOn);
+  const i = mi(y, m);
+  return d <= Math.min(card.statement_day, daysIn(i)) ? i : i + 1;
+}
+/** ยอดของรายการนี้ที่อยู่ในบิลรอบ i (จ่ายเต็ม = งวดเดียว, ผ่อน = หารเท่ากัน) */
+function amountOn(card: CardRow, c: ChargeRow, i: Mi): number {
+  const k = i - firstStatement(card, c.charged_on);
+  return k >= 0 && k < c.months ? Number(c.amount) / c.months : 0;
+}
+
+/** สถานะงวดผ่อน: จ่ายไปแล้วกี่งวด (นับงวดที่เลยวันครบกำหนดแล้ว) เหลือกี่งวด */
+export function installment(card: CardRow, c: ChargeRow, today: string) {
+  const first = firstStatement(card, c.charged_on);
+  let paid = 0;
+  for (let k = 0; k < c.months; k++) if (ymdOf(dueOfStatement(card, first + k)) < today) paid++;
+  const perMonth = Number(c.amount) / c.months;
+  return { paid, left: c.months - paid, perMonth, done: paid >= c.months, lastDue: dueOfStatement(card, first + c.months - 1) };
+}
+
+/** สรุปบัตร ณ วันนี้: รอบที่กำลังใช้ และบิลที่ต้องจ่ายครั้งถัดไป */
+export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) {
+  const t = todayParts(today);
+  const ti = mi(t.y, t.m);
+  // รอบที่กำลังใช้ = วันตัดรอบที่ยังไม่ถึง (หรือวันนี้)
+  const open: Mi = t.d <= Math.min(card.statement_day, daysIn(ti)) ? ti : ti + 1;
+  const sum = (i: Mi) => charges.reduce((s, c) => s + amountOn(card, c, i), 0);
+  const prev = open - 1;
+  const prevDue = dueOfStatement(card, prev);
+  // บิลรอบก่อนยังไม่ถึงวันจ่าย → ต้องจ่ายบิลนั้น ไม่งั้นบิลถัดไปคือรอบที่กำลังใช้
+  const billOpen = ymdOf(prevDue) >= today;
+  const bill = billOpen
+    ? { statement: dateOf(prev, card.statement_day), due: prevDue, amount: sum(prev), closed: true }
+    : { statement: dateOf(open, card.statement_day), due: dueOfStatement(card, open), amount: sum(open), closed: false };
+  const cycleCharges = charges.filter((c) => amountOn(card, c, open) > 0);
+  const installments = charges.filter((c) => c.months > 1 && !installment(card, c, today).done);
+  const owedLeft = installments.reduce((s, c) => { const st = installment(card, c, today); return s + st.perMonth * st.left; }, 0);
+  return {
+    cycleEnd: dateOf(open, card.statement_day),
+    cycleStart: new Date(dateOf(prev, card.statement_day).getTime() + 864e5),
+    cycleAmount: sum(open),
+    cycleCharges,
+    bill,
+    installments,
+    /** ผ่อนต่อเดือนรวม (งวดที่ยังเหลือ) */
+    monthlyInstallments: installments.reduce((s, c) => s + Number(c.amount) / c.months, 0),
+    /** ยอดผ่อนที่ยังค้าง (ไม่รวมรอบนี้ที่จ่ายเต็ม) */
+    owedLeft,
+  };
+}
+
+/** ยอดบัตรที่ครบกำหนดจ่ายในเดือนนั้น (y, m: 0-11) รวมทุกบัตร */
+export function cardsDueInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): number {
+  const target = mi(y, m);
+  let total = 0;
+  for (const card of cards) {
+    const mine = charges.filter((c) => c.card_id === card.id);
+    for (let i = target - 2; i <= target; i++) {
+      const due = dueOfStatement(card, i);
+      if (mi(due.getFullYear(), due.getMonth()) === target) total += mine.reduce((s, c) => s + amountOn(card, c, i), 0);
+    }
+  }
+  return total;
+}

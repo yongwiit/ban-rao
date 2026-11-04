@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PromptPayQR } from "@/components/PromptPayQR";
 import { Goals } from "@/components/Goals";
+import { CreditCards } from "@/components/CreditCards";
+import { Income } from "@/components/Income";
+import { Utilities } from "@/components/Utilities";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
 import { validPromptPay } from "@/lib/promptpay";
@@ -13,7 +16,7 @@ import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
-import { BILL_PERIODS, paidFromLabel, categoryLabel, isHouseholdSpend, monthlySetAside, type BillPeriod } from "@/lib/family";
+import { BILL_PERIODS, FIXED_COST_PRESETS, paidFromLabel, categoryLabel, isHouseholdSpend, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { momOwesDad } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
@@ -122,6 +125,8 @@ export default function MoneyPage() {
         )}
       </section>
 
+      <Income scope={scope} spent={total} setAside={setAside} ym={ym} />
+
       <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} />
 
       {scope === "home" && <><section className="card flex items-center gap-3">
@@ -150,26 +155,30 @@ export default function MoneyPage() {
         })()}
       </Sheet>
 
+      <CreditCards />
+
       <Goals />
 
       <section className="card flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-[17px] font-semibold">บิลประจำ & เงินเก็บต่อเดือน</h2>
+          <h2 className="font-display text-[17px] font-semibold">ค่าใช้จ่ายประจำ (fixed cost)</h2>
           <button onClick={() => setBillOpen("new")} className="min-h-9 px-1 text-sm text-muted">+ เพิ่ม</button>
         </div>
-        {activeBills.length === 0 && <p className="text-sm text-muted">เพิ่มบิล เช่น ค่าไฟ ประกันรถ ค่าเทอม แล้วแอปจะคำนวณว่าต้องเก็บเดือนละเท่าไร</p>}
+        {activeBills.length === 0 && <p className="text-sm text-muted">เพิ่มค่าใช้จ่ายประจำ เลือกได้ว่าจ่ายทุกวัน ทุกเดือน หรือปีละครั้ง เช่น ค่าขนมลูก ค่าเน็ต ประกันรถ แล้วแอปจะคำนวณว่าต้องเตรียมเดือนละเท่าไร</p>}
         {activeBills.map((b) => (
           <button key={b.id} onClick={() => setBillOpen(b)} className="flex min-h-8 items-center justify-between text-left text-sm">
-            <span>{b.name} <span className="text-muted">· {b.period === "monthly" ? "ทุกเดือน" : `${baht(Number(b.amount))}/${b.period === "yearly" ? "ปี" : "เทอม"}`}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}</span></span>
+            <span>{b.name} <span className="text-muted">· {b.period === "monthly" ? "ทุกเดือน" : `${baht(Number(b.amount))}/${BILL_PERIODS[b.period].unit}`}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}</span></span>
             <span>{baht(monthlySetAside(Number(b.amount), b.period))}</span>
           </button>
         ))}
         {activeBills.length > 0 && (
           <div className="flex items-center justify-between border-t border-dashed border-line pt-2 font-semibold">
-            <span>ต้องเก็บเดือนละ</span><span className="font-display text-lg">{baht(setAside)} บาท</span>
+            <span>ต้องเตรียมเดือนละ</span><span className="font-display text-lg">{baht(setAside)} บาท</span>
           </div>
         )}
       </section></>}
+
+      <Utilities ym={ym} filter={inScope} onAdd={(category) => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category, paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" })} />
 
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
@@ -207,7 +216,7 @@ export default function MoneyPage() {
         )}
       </Sheet>
 
-      <Sheet open={!!billOpen} onClose={() => setBillOpen(null)} title={billOpen === "new" ? "เพิ่มบิลประจำ" : "แก้บิล"}>
+      <Sheet open={!!billOpen} onClose={() => setBillOpen(null)} title={billOpen === "new" ? "เพิ่มค่าใช้จ่ายประจำ" : "แก้ค่าใช้จ่ายประจำ"}>
         {billOpen && <BillForm key={billOpen === "new" ? "new" : billOpen.id} bill={billOpen === "new" ? null : billOpen} onDone={() => setBillOpen(null)} />}
       </Sheet>
 
@@ -229,28 +238,30 @@ function BillForm({ bill, onDone }: { bill: BillRow | null; onDone: () => void }
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!(n > 0)) return setErr("ใส่ยอดเงินให้ถูกต้อง");
-    const row = { name: name.trim(), amount: n, period, due_day: due ? Number(due) : null };
+    const row = { name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? Number(due) : null };
     const { error } = bill ? await supabase().from("bills").update(row).eq("id", bill.id) : await supabase().from("bills").insert(row);
     if (error) return setErr(error.message);
     onDone();
   }
   return (
     <form onSubmit={save} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm font-medium">ชื่อบิล<input className="field" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ประกันรถ" /></label>
-      <label className="flex flex-col gap-1 text-sm font-medium">ยอดต่อครั้ง (บาท)<input className="field" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+      <label className="flex flex-col gap-1 text-sm font-medium">ชื่อรายการ<input className="field" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ประกันรถ" />
+        <span className="flex flex-wrap gap-1.5 pt-1">{FIXED_COST_PRESETS.map((p) => <button type="button" key={p} className="chip" aria-pressed={name === p} onClick={() => setName(p)}>{p}</button>)}</span>
+      </label>
+      <label className="flex flex-col gap-1 text-sm font-medium">{period === "daily" ? "ยอดต่อวัน (บาท)" : "ยอดต่อครั้ง (บาท)"}<input className="field" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายบ่อยแค่ไหน</legend>
         <div className="flex flex-wrap gap-1.5">
           {(Object.keys(BILL_PERIODS) as BillPeriod[]).map((p) => <button type="button" key={p} className="chip" aria-pressed={period === p} onClick={() => setPeriod(p)}>{BILL_PERIODS[p].label}</button>)}
         </div>
       </fieldset>
-      <label className="flex flex-col gap-1 text-sm font-medium">ครบกำหนดวันที่ (ไม่ใส่ก็ได้)<input className="field" type="number" min={1} max={31} value={due} onChange={(e) => setDue(e.target.value)} /></label>
-      {n > 0 && <p className="rounded-2xl bg-mint px-3 py-2 text-sm">ต้องเก็บเดือนละ <b>{baht(monthlySetAside(n, period))} บาท</b></p>}
+      {period !== "daily" && <label className="flex flex-col gap-1 text-sm font-medium">ครบกำหนดวันที่ (ไม่ใส่ก็ได้)<input className="field" type="number" min={1} max={31} value={due} onChange={(e) => setDue(e.target.value)} /></label>}
+      {n > 0 && <p className="rounded-2xl bg-mint px-3 py-2 text-sm">ต้องเตรียมเดือนละ <b>{baht(monthlySetAside(n, period))} บาท</b>{period === "daily" ? ` (${baht(n)} × 365 วัน ÷ 12)` : ""}</p>}
       {err && <p role="alert" className="text-sm text-rose">{err}</p>}
-      <button className="btn-dark">บันทึกบิล</button>
+      <button className="btn-dark">บันทึก</button>
       {bill && (
         <button type="button" className="flex min-h-11 items-center justify-center gap-1 text-sm text-rose" onClick={async () => { await supabase().from("bills").delete().eq("id", bill.id); onDone(); }}>
-          <TrashIcon />ลบบิล
+          <TrashIcon />ลบรายการนี้
         </button>
       )}
     </form>
