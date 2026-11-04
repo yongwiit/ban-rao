@@ -44,6 +44,8 @@ export function useLive<T>(
         { event: "*", schema: "public", table, filter: `household_id=eq.${householdId}` },
         () => refresh(),
       )
+      // realtime ส่ง DELETE มาแค่ id (ไม่มี household_id) ตัวกรองด้านบนจึงจับไม่ได้ → ฟังแยก
+      .on("postgres_changes", { event: "DELETE", schema: "public", table }, () => refresh())
       .subscribe();
     return () => {
       supabase().removeChannel(channel);
