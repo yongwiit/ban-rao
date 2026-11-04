@@ -37,6 +37,37 @@ function billText(c: ChargeRow, name: (k: string) => string): string {
 }
 
 /** การ์ดบัตรเครดิตในแท็บ "ของฉัน" */
+type LastState = "paid" | "due" | "late" | "none";
+/** สถานะบิลล่าสุดของบัตร: ติ๊กแล้ว / ยังไม่ถึงวันจ่าย / เลยวันจ่ายแต่ยังไม่ติ๊ก / ไม่มียอด
+ *  บิลที่ครบจ่ายก่อนเดือนนี้ถือว่าจ่ายแล้ว (ก่อนเริ่มใช้การติ๊ก) */
+function lastState(cardId: string, last: { due: Date; amount: number }, ticks: { card_id: string; ym: string }[], today: string): LastState {
+  if (last.amount <= 0) return "none";
+  const ym = dayKey(last.due).slice(0, 7);
+  if (ym < today.slice(0, 7) || ticks.some((p) => p.card_id === cardId && p.ym === ym)) return "paid";
+  return dayKey(last.due) >= today ? "due" : "late";
+}
+
+/** ติ๊กว่าจ่ายบิลล่าสุด (ตัดรอบแล้ว) ของบัตรนี้แล้ว */
+function LastBillTick({ card, last, today }: { card: CardRow; last: { statement: Date; due: Date; amount: number }; today: string }) {
+  const { household } = useHousehold();
+  const ticks = useLive<{ card_id: string; ym: string }>("card_bill_paid", household.id, () => supabase().from("card_bill_paid").select("card_id,ym").eq("card_id", card.id));
+  const st = lastState(card.id, last, ticks.rows, today);
+  const ym = dayKey(last.due).slice(0, 7);
+  const ticked = ticks.rows.some((p) => p.ym === ym);
+  if (st === "none" || (st === "paid" && !ticked)) return null;
+  async function toggle() {
+    if (ticked) await supabase().from("card_bill_paid").delete().eq("card_id", card.id).eq("ym", ym);
+    else await supabase().from("card_bill_paid").insert({ card_id: card.id, ym, amount: last.amount });
+    ticks.refresh();
+  }
+  return (
+    <button type="button" onClick={toggle} className={`flex min-h-12 items-center gap-3 rounded-2xl px-3 text-left text-sm ${ticked ? "bg-mint" : st === "late" ? "bg-rose/10" : "bg-sand"}`}>
+      <span className={`flex size-7 shrink-0 items-center justify-center rounded-full font-bold ${ticked ? "bg-white text-[#3F8A5F]" : "border-2 border-cocoa/25 bg-white"}`}>{ticked ? "✓" : ""}</span>
+      <span className="flex-1">{ticked ? <>จ่ายบิลตัดรอบ {day(last.statement)} แล้ว <span className="text-xs text-muted">· แตะเพื่อยกเลิก</span></> : <>ติ๊กว่าจ่ายบิลตัดรอบ {day(last.statement)} แล้ว <b>{baht(last.amount)}</b> บาท</>}</span>
+    </button>
+  );
+}
+
 export function CreditCards() {
   const { household } = useHousehold();
   const { cards, charges, refresh } = useCards(household.id);
@@ -49,11 +80,12 @@ export function CreditCards() {
   const rows = cards.map((card) => {
     const mine = charges.filter((c) => c.card_id === card.id);
     const s = cardSummary(card, mine, today);
-    const paid = s.bill.closed && paidQ.rows.some((p) => p.card_id === card.id && p.ym === dayKey(s.bill.due).slice(0, 7));
-    return { card, mine, s, paid };
+    const st = lastState(card.id, s.last, paidQ.rows, today);
+    return { card, mine, s, st };
   });
-  // รอบนี้: บัตรที่จ่ายแล้ว/ไม่มีบิลค้างไปอยู่ล่าง
-  if (view === "now") rows.sort((a, b) => Number(a.paid || !a.s.bill.closed) - Number(b.paid || !b.s.bill.closed));
+  // รอบนี้: ยังไม่จ่ายขึ้นก่อน (เลยกำหนด → ต้องจ่าย) แล้วค่อยจ่ายแล้ว/ไม่มียอด
+  const rank = { late: 0, due: 1, paid: 2, none: 3 } as const;
+  if (view === "now") rows.sort((a, b) => rank[a.st] - rank[b.st]);
 
   return (
     <section className="card flex flex-col gap-3">
@@ -69,11 +101,12 @@ export function CreditCards() {
         </div>
       )}
       {cards.length === 0 && <p className="text-sm text-muted">เพิ่มบัตร ใส่วันตัดรอบกับวันจ่าย แล้วจดว่ารูดอะไรไป (จ่ายเต็ม ผ่อน หรือ subscription รายเดือน/ปี) · บัตรเห็นเฉพาะคุณ ถ้าจะให้อีกฝ่ายช่วยจ่าย กดเรียกเก็บแล้วรอเขายืนยัน</p>}
-      {rows.map(({ card, mine, s, paid }) => {
-        const d = daysTo(s.bill.due, today);
+      {rows.map(({ card, mine, s, st }) => {
+        const d = daysTo(s.last.due, today);
+        const paid = st === "paid";
         const pending = mine.filter((c) => c.bill_status === "pending").length;
         const next = view === "next";
-        const nothing = !next && !s.bill.closed;
+        const nothing = !next && st === "none";
         return (
           <button key={card.id} onClick={() => setOpenId(card.id)} className="flex flex-col gap-1 rounded-2xl p-3 text-left" style={{ background: softOf(card.color) }}>
             <span className="flex items-center gap-2">
@@ -88,15 +121,17 @@ export function CreditCards() {
               </span>
             ) : nothing ? (
               <span className="flex items-baseline justify-between gap-2 opacity-70">
-                <span className="text-sm">รอบนี้ไม่มีบิลค้าง</span>
+                <span className="text-sm">บิลล่าสุดไม่มียอด</span>
                 <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัดรอบ {day(s.cycleEnd)}</span>
               </span>
             ) : (
               <span className={`flex items-baseline justify-between gap-2 ${paid ? "opacity-60" : ""}`}>
-                <span className="text-sm">{paid ? "จ่ายแล้ว" : "ต้องจ่าย"} <b className={`font-display text-xl ${paid ? "line-through" : ""}`}>{baht(s.bill.amount)}</b> บาท</span>
+                <span className="text-sm">{paid ? "จ่ายแล้ว" : "ต้องจ่าย"} <b className={`font-display text-xl ${paid ? "line-through" : ""}`}>{baht(s.last.amount)}</b> บาท</span>
                 {paid
                   ? <span className="shrink-0 rounded-lg bg-mint px-2 py-0.5 text-xs font-semibold text-[#3F8A5F]">✓ จ่ายแล้ว</span>
-                  : <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold ${s.bill.amount > 0 && d <= 3 ? "bg-butter" : "bg-white/70"}`}>จ่าย {day(s.bill.due)} · {inDays(d)}</span>}
+                  : st === "late"
+                    ? <span className="shrink-0 rounded-lg bg-rose/15 px-2 py-0.5 text-xs font-semibold text-rose">เลยวันจ่าย {day(s.last.due)} · ยังไม่ติ๊ก</span>
+                    : <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold ${d <= 3 ? "bg-butter" : "bg-white/70"}`}>จ่าย {day(s.last.due)} · {inDays(d)}</span>}
               </span>
             )}
             <span className="text-xs text-muted">
@@ -154,6 +189,7 @@ function CardDetail({ card, charges, today, onEditCard, refresh }: { card: CardR
         </span>
         <span className="text-xs text-muted">ตัดรอบทุกวันที่ {card.statement_day} · จ่ายทุกวันที่ {card.due_day}{card.bank ? ` · ${card.bank}` : ""}</span>
       </div>
+      <LastBillTick card={card} last={s.last} today={today} />
 
       {s.cycleByCat.length > 0 && (
         <div className="flex flex-col gap-1.5">
