@@ -8,6 +8,7 @@ import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory } from "@/components/SpendHistory";
 import { InviteButtons } from "@/components/InviteButtons";
+import { LineLink } from "@/components/LineLink";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
 import { BILL_PERIODS, PAID_FROM, categoryLabel, isHouseholdSpend, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
@@ -148,6 +149,8 @@ export default function MoneyPage() {
           </button>
         ))}
       </section>
+
+      <LineLink />
 
       <section className="card flex flex-col gap-2">
         <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>
