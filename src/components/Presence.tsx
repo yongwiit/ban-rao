@@ -2,18 +2,18 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Role } from "@/lib/family";
+import type { MemberRole } from "@/lib/family";
 import { Mascot } from "./Mascots";
 import { useHousehold } from "./Household";
 import { play } from "@/lib/sfx";
 
-export type MemberInfo = { user_id: string; role: Role; last_seen_at: string | null };
+export type MemberInfo = { user_id: string; role: MemberRole; last_seen_at: string | null };
 type Ctx = { members: MemberInfo[]; online: Set<string>; sendHeart: (to: string) => Promise<string | null> };
 const PresenceContext = createContext<Ctx>({ members: [], online: new Set(), sendHeart: async () => null });
 export const usePresence = () => useContext(PresenceContext);
 
 /** ติดตามว่าใครในบ้านเปิดแอปอยู่ และรับหัวใจที่คนในบ้านส่งมา */
-export function PresenceProvider({ userId, role, householdId, children }: { userId: string; role: Role; householdId: string; children: ReactNode }) {
+export function PresenceProvider({ userId, role, householdId, children }: { userId: string; role: MemberRole; householdId: string; children: ReactNode }) {
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [online, setOnline] = useState<Set<string>>(new Set());
   const [hearts, setHearts] = useState<{ id: string; from: string }[]>([]);

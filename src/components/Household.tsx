@@ -5,8 +5,8 @@ import { clearJoinCode, pendingJoinCode } from "@/lib/invite";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { GOOGLE_LOGIN } from "@/lib/config";
-import { DEFAULT_PEOPLE, makePeople, person, type MascotKind, type People, type Role } from "@/lib/family";
-import { Bear, Bunny, Family } from "./Mascots";
+import { DEFAULT_PEOPLE, makePeople, person, type MascotKind, type People, type MemberRole, isParentRole } from "@/lib/family";
+import { Bear, Bunny, Chick, Family, Mascot } from "./Mascots";
 import { Credit } from "./Credit";
 import { PresenceProvider } from "./Presence";
 
@@ -20,7 +20,8 @@ export type HouseholdRow = {
 
 type Ctx = {
   userId: string;
-  role: Role;
+  role: MemberRole;
+  isParent: boolean;
   household: HouseholdRow;
   partnerJoined: boolean;
   people: People;
@@ -39,7 +40,7 @@ export function useHousehold(): Ctx {
 
 export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [member, setMember] = useState<{ role: Role; household: HouseholdRow; partnerJoined: boolean } | null | undefined>(undefined);
+  const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean } | null | undefined>(undefined);
   const [people, setPeople] = useState<People>(() => makePeople(DEFAULT_PEOPLE));
 
   const loadPeople = useCallback(async (hid: string) => {
@@ -63,12 +64,12 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     }
     const [{ data: hh }, { count }] = await Promise.all([
       db.from("households").select("id, name, join_code, monthly_budget, budget_enabled").eq("id", me.household_id).single(),
-      db.from("members").select("user_id", { count: "exact", head: true }).eq("household_id", me.household_id),
+      db.from("members").select("user_id", { count: "exact", head: true }).eq("household_id", me.household_id).in("role", ["dad", "mom"]),
       loadPeople(me.household_id),
     ]);
     if (hh) {
       setMember({
-        role: me.role as Role,
+        role: me.role as MemberRole,
         household: { ...hh, monthly_budget: Number(hh.monthly_budget) },
         partnerJoined: (count ?? 0) >= 2,
       });
@@ -100,6 +101,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       value={{
         userId: session.user.id,
         role: member.role,
+        isParent: isParentRole(member.role),
         household: member.household,
         partnerJoined: member.partnerJoined,
         people,
@@ -197,51 +199,90 @@ function Login() {
   );
 }
 
+type KidOpt = { key: string; name: string; mascot: MascotKind; taken: boolean };
+
 function Setup({ onDone }: { onDone: () => Promise<void> }) {
-  const [role, setRole] = useState<Role>("dad");
+  const [who, setWho] = useState<"dad" | "mom" | "kid">("dad");
   const [code, setCode] = useState(() => pendingJoinCode());
+  const [kids, setKids] = useState<KidOpt[] | null>(null);
+  const [kid, setKid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function run(fn: "create_household" | "join_household") {
+  async function run(fn: "create_household" | "join_household", role: string) {
     setBusy(true);
     setMsg(null);
     const args = fn === "create_household" ? { p_role: role } : { p_code: code, p_role: role };
     const { error } = await supabase().rpc(fn, args);
     setBusy(false);
-    if (error) setMsg(error.message.includes("duplicate") ? `มี${role === "dad" ? "คุณพ่อ" : "คุณแม่"}ในบ้านนี้แล้ว เลือกอีกคน` : error.message);
+    if (error) setMsg(error.message.includes("duplicate") ? "คนนี้มีบัญชีในบ้านนี้แล้ว เลือกคนอื่น" : error.message);
     else { clearJoinCode(); await onDone(); }
   }
+
+  async function findKids() {
+    setBusy(true);
+    setMsg(null);
+    const { data } = await supabase().rpc("household_kids", { p_code: code });
+    setBusy(false);
+    if (!data?.length) return setMsg("ไม่พบบ้านนี้ หรือบ้านนี้ยังไม่ได้เพิ่มลูก ให้พ่อแม่เพิ่มที่ตั้งค่า > คนในบ้าน ก่อนนะ");
+    setKids(data as KidOpt[]);
+  }
+
+  const opts: { k: "dad" | "mom" | "kid"; label: string; face: React.ReactNode }[] = [
+    { k: "dad", label: "คุณพ่อ", face: <Bear size={52} /> },
+    { k: "mom", label: "คุณแม่", face: <Bunny size={52} /> },
+    { k: "kid", label: "ลูก", face: <Chick size={52} /> },
+  ];
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-5 px-5">
       <h1 className="font-display text-2xl font-bold">ตั้งค่าบ้าน</h1>
       <section className="card flex flex-col gap-3">
         <p className="font-medium">คุณคือใคร</p>
-        <div className="grid grid-cols-2 gap-3">
-          {(["dad", "mom"] as Role[]).map((r) => (
-            <button
-              key={r}
-              aria-pressed={role === r}
-              onClick={() => setRole(r)}
-              className={`flex flex-col items-center gap-1 rounded-3xl p-3 ${role === r ? "bg-peach ring-2 ring-cocoa" : "bg-sand"}`}
-            >
-              {r === "dad" ? <Bear size={56} /> : <Bunny size={56} />}
-              <span className="font-semibold">{r === "dad" ? "คุณพ่อ" : "คุณแม่"}</span>
+        <div className="grid grid-cols-3 gap-2">
+          {opts.map((o) => (
+            <button key={o.k} aria-pressed={who === o.k} onClick={() => { setWho(o.k); setMsg(null); }}
+              className={`flex flex-col items-center gap-1 rounded-3xl p-2.5 ${who === o.k ? "bg-peach ring-2 ring-cocoa" : "bg-sand"}`}>
+              {o.face}<span className="font-semibold">{o.label}</span>
             </button>
           ))}
         </div>
       </section>
-      <section className="card flex flex-col gap-3">
-        <p className="font-medium">คนแรกของบ้าน</p>
-        <button className="btn-dark" disabled={busy} onClick={() => run("create_household")}>สร้างบ้านใหม่</button>
-      </section>
-      <section className="card flex flex-col gap-3">
-        <p className="font-medium">มีรหัสบ้านจากอีกคนแล้ว</p>
-        <label className="sr-only" htmlFor="code">รหัสบ้าน</label>
-        <input id="code" className="field tracking-[0.3em] uppercase" placeholder="รหัส 6 ตัว" value={code} onChange={(e) => setCode(e.target.value)} />
-        <button className="btn-soft" disabled={busy || code.trim().length < 6} onClick={() => run("join_household")}>เข้าร่วมบ้าน</button>
-      </section>
+      {who !== "kid" ? (
+        <>
+          <section className="card flex flex-col gap-3">
+            <p className="font-medium">คนแรกของบ้าน</p>
+            <button className="btn-dark" disabled={busy} onClick={() => run("create_household", who)}>สร้างบ้านใหม่</button>
+          </section>
+          <section className="card flex flex-col gap-3">
+            <p className="font-medium">มีรหัสบ้านจากอีกคนแล้ว</p>
+            <label className="sr-only" htmlFor="code">รหัสบ้าน</label>
+            <input id="code" className="field tracking-[0.3em] uppercase" placeholder="รหัส 6 ตัว" value={code} onChange={(e) => setCode(e.target.value)} />
+            <button className="btn-soft" disabled={busy || code.trim().length < 6} onClick={() => run("join_household", who)}>เข้าร่วมบ้าน</button>
+          </section>
+        </>
+      ) : (
+        <section className="card flex flex-col gap-3">
+          <p className="font-medium">ขอรหัสบ้านจากพ่อแม่</p>
+          <label className="sr-only" htmlFor="kcode">รหัสบ้าน</label>
+          <input id="kcode" className="field tracking-[0.3em] uppercase" placeholder="รหัส 6 ตัว" value={code} onChange={(e) => { setCode(e.target.value); setKids(null); }} />
+          {!kids && <button className="btn-soft" disabled={busy || code.trim().length < 6} onClick={findKids}>ต่อไป</button>}
+          {kids && (
+            <>
+              <p className="text-sm text-muted">หนูคือใคร</p>
+              <div className="grid grid-cols-3 gap-2">
+                {kids.map((k) => (
+                  <button key={k.key} disabled={k.taken} aria-pressed={kid === k.key} onClick={() => setKid(k.key)}
+                    className={`flex flex-col items-center gap-1 rounded-3xl p-2.5 text-sm disabled:opacity-40 ${kid === k.key ? "bg-peach ring-2 ring-cocoa" : "bg-sand"}`}>
+                    <Mascot kind={k.mascot} size={44} /><span className="font-semibold">{k.name}</span>{k.taken && <span className="text-xs">มีบัญชีแล้ว</span>}
+                  </button>
+                ))}
+              </div>
+              <button className="btn-dark" disabled={busy || !kid} onClick={() => kid && run("join_household", kid)}>เข้าบ้าน</button>
+            </>
+          )}
+        </section>
+      )}
       {msg && <p role="alert" className="text-center text-sm text-rose">{msg}</p>}
     </main>
   );

@@ -14,7 +14,7 @@ import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { baht } from "@/lib/format";
 
 export default function SettingsPage() {
-  const { household, role, partnerJoined, signOut, people } = useHousehold();
+  const { household, role, partnerJoined, signOut, people, isParent } = useHousehold();
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,30 +28,31 @@ export default function SettingsPage() {
         <p className="text-muted">คุณคือ {people.get(role).name} · {partnerJoined ? "พ่อแม่อยู่ครบแล้ว" : "ยังรออีกคนเข้าบ้าน"}</p>
       </section>
 
-      <FamilyEditor />
+      {isParent && <FamilyEditor />}
       <PushSetup />
       <SoundToggle />
 
-      <section className="card flex flex-col gap-2">
+      {isParent && <section className="card flex flex-col gap-2">
         <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>
         <p className="text-sm text-muted">ส่งลิงก์ให้อีกคน กดแล้วสมัครเข้าบ้านนี้ได้เลย</p>
+        <p className="text-xs text-muted">ลูกสมัครเองได้: เลือก &quot;ลูก&quot; ตอนสมัคร แล้วใส่รหัสบ้านนี้</p>
         <InviteButtons code={household.join_code} />
-      </section>
+      </section>}
 
-      <LineLink />
+      {isParent && <LineLink />}
 
       <CalendarLink />
 
       <GoogleImport />
 
-      <Link href="/money" className="card flex items-center gap-3 text-sm">
+      {isParent && <Link href="/money" className="card flex items-center gap-3 text-sm">
         <span className="flex size-9 items-center justify-center rounded-xl bg-mint"><WalletIcon size={18} /></span>
         <span className="flex flex-1 flex-col">
           <span className="font-semibold">งบประจำเดือน</span>
           <span className="text-xs text-muted">{household.budget_enabled ? `ตั้งไว้ ${baht(Number(household.monthly_budget))} · ปรับได้ที่หน้าเงิน` : "ยังไม่ได้ตั้ง · ตั้งได้ที่หน้าเงิน"}</span>
         </span>
         <ChevronIcon />
-      </Link>
+      </Link>}
 
       <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ</button>
       <Credit className="pb-4" />

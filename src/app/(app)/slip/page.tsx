@@ -6,6 +6,7 @@ import { ocrSlip, warmUpOcr } from "@/lib/slipOcr";
 import { ExpenseForm, type ExpenseDraft } from "@/components/ExpenseForm";
 import { BackIcon, UploadIcon } from "@/components/Icons";
 import { Bunny, Family } from "@/components/Mascots";
+import type { Role } from "@/lib/family";
 import { useHousehold } from "@/components/Household";
 import { dayKey, thaiTime } from "@/lib/format";
 type SlipResult = {
@@ -45,7 +46,7 @@ function toDraft(r: SlipResult, role: "dad" | "mom"): ExpenseDraft {
 }
 
 export default function SlipPage() {
-  const { role } = useHousehold();
+  const role = useHousehold().role as Role;
   const [items, setItems] = useState<Item[]>([]);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { warmUpOcr(); }, []);

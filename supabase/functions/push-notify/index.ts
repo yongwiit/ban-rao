@@ -171,6 +171,33 @@ async function onHeart(id: string) {
   return { sent };
 }
 
+/** สมุดดาว: ลูกขอ → แจ้งพ่อแม่ / พ่อแม่ให้หรืออนุมัติ → แจ้งลูก */
+async function onStar(id: string) {
+  const { data: l } = await db.from("star_log").select("*").eq("id", id).maybeSingle();
+  if (!l) return { sent: 0 };
+  const NAMES = await names(l.household_id);
+  const kidName = NAMES[l.kid] ?? "ลูก";
+  const { data: mem } = await db.from("members").select("user_id, role").eq("household_id", l.household_id);
+  const parents = (mem ?? []).filter((m) => m.role === "dad" || m.role === "mom").map((m) => m.user_id);
+  const kidUsers = (mem ?? []).filter((m) => m.role === l.kid).map((m) => m.user_id);
+  // trigger เรียกเฉพาะตอนสร้างหรือเปลี่ยนสถานะ จึงไม่ส่งซ้ำ
+  let sent = 0;
+  if (l.status === "pending") {
+    sent = await send(parents, "notify_new", {
+      title: l.kind === "earn" ? `⭐ ${kidName}ทำ${l.title}แล้ว` : `🎁 ${kidName}ขอแลก${l.title}`,
+      body: l.kind === "earn" ? `ขอ ${l.stars} ดาว แตะเพื่ออนุมัติ` : `ใช้ ${-l.stars} ดาว แตะเพื่ออนุมัติ`, url: "/stars", tag: `star-${l.id}`,
+    });
+  } else if (l.status === "approved") {
+    sent = await send(kidUsers, "notify_new", {
+      title: l.kind === "earn" ? `⭐ ได้ ${l.stars} ดาว!` : `🎉 ได้${l.title}แล้ว!`,
+      body: l.kind === "earn" ? `${l.emoji} ${l.title} เก่งมาก` : `ใช้ไป ${-l.stars} ดาว`, url: "/stars", tag: `star-${l.id}`,
+    });
+  } else if (l.status === "rejected") {
+    sent = await send(kidUsers, "notify_new", { title: `${l.emoji} ${l.title}`, body: l.kind === "earn" ? "พ่อแม่ยังไม่อนุมัติ ลองใหม่นะ" : "ยังไม่ได้แลก ดาวคืนให้แล้ว", url: "/stars", tag: `star-${l.id}` });
+  }
+  return { sent };
+}
+
 async function onTest(endpoint: string) {
   const { data: s } = await db.from("push_subscriptions").select("user_id").eq("endpoint", endpoint).maybeSingle();
   if (!s) return { sent: 0 };
@@ -195,6 +222,7 @@ Deno.serve(async (req) => {
     if (body.type === "cron") out = await onCron();
     else if ((body.type === "new" || body.type === "change") && typeof body.event_id === "string") out = await onChange(body.event_id, body.type);
     else if (body.type === "heart" && typeof body.heart_id === "string") out = await onHeart(body.heart_id);
+    else if (body.type === "star" && typeof body.log_id === "string") out = await onStar(body.log_id);
     else if (body.type === "test" && typeof body.endpoint === "string") out = await onTest(body.endpoint);
     return Response.json(out, { headers: cors });
   } catch (err) {

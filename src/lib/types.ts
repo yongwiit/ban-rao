@@ -18,3 +18,9 @@ export type ExpenseRow = {
 export type BillRow = { id: string; name: string; amount: number; period: BillPeriod; due_day: number | null; active: boolean };
 export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
 export type MemberRow = { user_id: string; role: Role };
+export type StarTask = { id: string; title: string; stars: number; emoji: string; kid: string | null; active: boolean };
+export type StarReward = { id: string; title: string; cost: number; emoji: string; active: boolean };
+export type StarLog = {
+  id: string; kid: string; kind: "earn" | "redeem"; stars: number; title: string; emoji: string;
+  status: "pending" | "approved" | "rejected"; created_by: string; created_at: string; decided_at: string | null;
+};

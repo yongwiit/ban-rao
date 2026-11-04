@@ -2,6 +2,9 @@
 /** dad, mom = พ่อแม่ (ผูกกับบัญชี), pearl = ลูกคนแรก, kid2.. = ลูกคนต่อไป, all = ทั้งบ้าน */
 export type Who = string;
 export type Role = "dad" | "mom";
+/** บทบาทในบัญชี: dad, mom หรือ key ของลูก */
+export type MemberRole = string;
+export const isParentRole = (r: string): r is Role => r === "dad" || r === "mom";
 export type PaidFrom = "pot" | Role | "personal";
 
 export const MASCOTS = ["bear", "bunny", "chick", "cat", "puppy", "panda", "piggy", "frog"] as const;

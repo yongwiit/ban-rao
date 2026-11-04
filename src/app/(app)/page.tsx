@@ -22,7 +22,7 @@ function greeting(h: number) {
 }
 
 export default function TodayPage() {
-  const { household, userId, people } = useHousehold();
+  const { household, userId, people, isParent } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -99,14 +99,18 @@ export default function TodayPage() {
           <span className="font-display text-3xl font-bold">{items.rows.length}</span>
           <span className="line-clamp-1 text-sm">{items.rows.slice(0, 3).map((i) => i.name).join(" ") || "ครบแล้ว"}</span>
         </Link>
-        <Link href="/money" className="flex flex-col gap-1.5 rounded-3xl bg-peach p-4">
+        {isParent ? <Link href="/money" className="flex flex-col gap-1.5 rounded-3xl bg-peach p-4">
           <span className="font-display font-semibold">บิลใน 7 วัน</span>
           <span className="font-display text-3xl font-bold">{dueSoon.length}</span>
           <span className="line-clamp-1 text-sm">{dueSoon.map((b) => `${b.name} ${thaiDate(b.due, { day: "numeric", month: "short" })}`).join(" · ") || "ยังไม่มี"}</span>
-        </Link>
+        </Link> : <Link href="/stars" className="flex flex-col gap-1.5 rounded-3xl bg-[#FBE9B8] p-4">
+          <span className="font-display font-semibold">สมุดดาว</span>
+          <span className="font-display text-3xl font-bold">⭐</span>
+          <span className="text-sm">ทำงานบ้าน สะสมดาว แลกรางวัล</span>
+        </Link>}
       </div>
 
-      <Link href="/money" className="card flex flex-col gap-2.5">
+      {isParent && <><Link href="/money" className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
           <span className="font-display font-semibold">เดือนนี้ใช้ไป</span>
           {household.budget_enabled && <span className="text-sm text-muted">งบ {baht(budget)} บาท</span>}
@@ -120,7 +124,7 @@ export default function TodayPage() {
 
       <Link href="/slip" className="btn-dark fixed bottom-[108px] right-6 z-10 shadow-[0_8px_20px_rgba(74,59,54,.25)]">
         <PlusIcon /> สลิป
-      </Link>
+      </Link></>}
     </div>
   );
 }
