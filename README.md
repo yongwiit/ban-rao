@@ -11,17 +11,16 @@
 3. วางไฟล์ `supabase/migrations/0002_auto_confirm.sql` แล้วกด **Run** อีกครั้ง (สมัครแล้วใช้ได้เลยไม่ต้องยืนยันอีเมล)
 4. เมนู **Project Settings > API** จดค่า `Project URL` และ `anon public key` ไว้
 
-### 2. คีย์อ่านสลิป (Anthropic)
-1. สมัครที่ https://console.anthropic.com เติมเครดิต (อ่านสลิปใบละไม่ถึง 1 บาทโดยประมาณ)
-2. เมนู API Keys > Create Key แล้วจดไว้
+### 2. อ่านสลิป
+อ่านในมือถือด้วย Tesseract.js (ฟรี โอเพนซอร์ส) ไฟล์โปรแกรมอยู่ใน `/public/ocr` ของแอปเอง
+รูปสลิปไม่ถูกส่งออกจากเครื่องและไม่ถูกเก็บ บันทึกเฉพาะข้อมูลที่อ่านได้ (`src/lib/slipOcr.ts`)
 
 ### 3. ขึ้นเว็บด้วย Vercel (ฟรี)
 1. สมัคร https://vercel.com ด้วยบัญชี GitHub
 2. Add New > Project > เลือก repo `ban-rao` > Import
-3. ใส่ Environment Variables 3 ตัว:
+3. ใส่ Environment Variables 2 ตัว:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `ANTHROPIC_API_KEY`
 4. กด Deploy จะได้ลิงก์ เช่น `ban-rao.vercel.app`
 
 ### 4. ใช้งานบนมือถือ
@@ -43,5 +42,5 @@ cp .env.example .env.local   # ใส่ค่า
 npm install
 npm run dev
 ```
-Next.js 16 + Supabase (Auth, Postgres RLS, Realtime) + Claude API สำหรับอ่านสลิป (`src/app/api/slip/route.ts`)
+Next.js 16 + Supabase (Auth, Postgres RLS, Realtime) + อ่านสลิปในเครื่องด้วย Tesseract.js (`src/lib/slipOcr.ts`)
 ชื่อและสีของคนในบ้านแก้ที่ `src/lib/family.ts`

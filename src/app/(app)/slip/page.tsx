@@ -8,8 +8,11 @@ import { BackIcon, UploadIcon } from "@/components/Icons";
 import { Bunny, Family } from "@/components/Mascots";
 import { useHousehold } from "@/components/Household";
 import { dayKey, thaiTime } from "@/lib/format";
-import { supabase } from "@/lib/supabase";
-import type { SlipResult } from "@/app/api/slip/route";
+type SlipResult = {
+  is_slip: boolean; amount: number | null; datetime: string | null; recipient: string | null;
+  bank: string | null; reference: string | null;
+  category_guess: "home" | "food" | "pearl" | "bill" | "car" | "gift" | "other";
+};
 
 type Item = { key: string; preview: string; state: "reading" | "ready" | "saved" | "error"; draft?: ExpenseDraft; msg?: string };
 
@@ -50,28 +53,17 @@ export default function SlipPage() {
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
-    const { data: s } = await supabase().auth.getSession();
-    const token = s.session?.access_token;
     for (const f of Array.from(files)) {
       const key = crypto.randomUUID();
       try {
-        const { data, preview, canvas } = await shrink(f);
+        const { preview, canvas } = await shrink(f);
         setItems((xs) => [...xs, { key, preview, state: "reading" }]);
-        // 1) อ่านในเครื่องฟรีด้วย OCR
+        // อ่านในเครื่องเท่านั้น รูปไม่ออกจากมือถือ และไม่ถูกเก็บไว้ที่ไหน
         let r: SlipResult | null = null;
         try {
           const o = await ocrSlip(canvas);
           if (o.amount) r = { ...o, is_slip: true, category_guess: o.category_guess as SlipResult["category_guess"] };
         } catch (e) { console.warn("ocr failed", e); }
-        // 2) ถ้าอ่านยอดไม่ได้ ลองให้ AI อ่าน (ใช้ได้เมื่อเปิดคีย์ไว้)
-        if (!r) {
-          const res = await fetch("/api/slip", {
-            method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-            body: JSON.stringify({ image: data, mediaType: "image/jpeg" }),
-          }).catch(() => null);
-          if (res?.ok) r = (await res.json()) as SlipResult;
-        }
         if (!r) {
           patch(key, { state: "error", msg: "อ่านยอดจากสลิปนี้ไม่ได้ กรอกเองด้านล่างได้เลยนะ", draft: toDraft({ is_slip: false, amount: null, datetime: null, recipient: null, bank: null, reference: null, category_guess: "other" }, role) });
           continue;
