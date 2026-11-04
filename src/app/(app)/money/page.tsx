@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PromptPayQR } from "@/components/PromptPayQR";
 import { Goals } from "@/components/Goals";
-import { CreditCards } from "@/components/CreditCards";
+import { CreditCards, useCards } from "@/components/CreditCards";
+import { BillRequests } from "@/components/BillRequests";
+import { FixedCosts, fixedMonthly } from "@/components/FixedCosts";
+import { Reorderable, useSectionOrder } from "@/components/Reorder";
+import { CatIcon, useCategories } from "@/components/Categories";
+import { activeSub, chargeInMonth } from "@/lib/cards";
 import { Income } from "@/components/Income";
 import { Utilities } from "@/components/Utilities";
 import { confetti } from "@/lib/confetti";
@@ -16,7 +21,7 @@ import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
-import { BILL_PERIODS, FIXED_COST_PRESETS, paidFromLabel, categoryLabel, isHouseholdSpend, monthlySetAside, type BillPeriod } from "@/lib/family";
+import { paidFromLabel, isHouseholdSpend } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { momOwesDad } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
@@ -33,7 +38,6 @@ export default function MoneyPage() {
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const { start, end } = monthRange(ym.y, ym.m);
   const [editing, setEditing] = useState<ExpenseDraft | null>(null);
-  const [billOpen, setBillOpen] = useState<BillRow | "new" | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   // ปุ่ม "จดเร็ว" จากไอคอนแอป (/money?add=1) เปิดฟอร์มจดรายจ่ายทันที
@@ -59,8 +63,17 @@ export default function MoneyPage() {
     expenses: allShared.rows.map((e) => ({ ...e, amount: Number(e.amount) })),
     settlements: settlements.rows.map((s) => ({ ...s, amount: Number(s.amount) })),
   });
-  const activeBills = bills.rows.filter((b) => b.active);
-  const setAside = activeBills.reduce((s, b) => s + monthlySetAside(Number(b.amount), b.period), 0);
+  const cards = useCards(hid);
+  const cats = useCategories();
+  const today = dayKey(now);
+  const activeBills = bills.rows.filter((b) => b.active && (scope === "home" ? b.paid_from !== "personal" : b.paid_from === "personal" && b.created_by === userId));
+  const mySubs = scope === "mine" ? cards.charges.filter((c) => activeSub(c, today)) : [];
+  const setAside = fixedMonthly(activeBills, mySubs);
+  // บัตรของฉันในแท็บ "ของฉัน": นับค่าน้ำไฟเน็ตที่รูดบัตรเอง (ไม่ได้ส่งไปเรียกเก็บ)
+  const cardUtil = (k: string, y: number, m: number) => cards.charges
+    .filter((c) => c.category === k && (!c.bill_to || c.bill_status === "rejected"))
+    .reduce((s, c) => s + chargeInMonth(c, y, m), 0);
+  const order = useSectionOrder(scope);
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const daysLeft = new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1;
 
@@ -86,6 +99,56 @@ export default function MoneyPage() {
     });
   }
 
+  const newDraft = (category: string): ExpenseDraft => ({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category, paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" });
+  const list = month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e)));
+
+  const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
+    income: { label: "💼 รายได้ & ใช้ไปกี่ %", node: <Income scope={scope} spent={total} setAside={setAside} ym={ym} /> },
+    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
+    settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
+      <section className="card flex items-center gap-3">
+        {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
+        <div className="flex flex-1 flex-col">
+          <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งครึ่ง)</span>
+          <span className="font-semibold">
+            {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${people.get("mom").name}โอนให้${people.get("dad").name} ${baht(owe)} บาท` : `${people.get("dad").name}โอนให้${people.get("mom").name} ${baht(-owe)} บาท`}
+          </span>
+        </div>
+        {owe !== 0 && <button onClick={() => setSettleOpen(true)} className="btn-soft min-h-10 px-3.5 text-[13px]">โอน / เคลียร์</button>}
+      </section>
+    ) },
+    cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", node: <CreditCards /> },
+    goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
+    fixed: { label: "📌 ค่าใช้จ่ายประจำ", node: <FixedCosts scope={scope} bills={activeBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
+    utilities: { label: "💡 ค่าน้ำ ไฟ เน็ต", node: <Utilities ym={ym} filter={inScope} onAdd={(category) => setEditing(newDraft(category))} extra={scope === "mine" ? cardUtil : undefined} /> },
+    list: { label: "🧾 รายการเดือนนี้", node: (
+      <section className="card flex flex-col gap-2.5">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-display text-[17px] font-semibold">รายการเดือนนี้</h2>
+          <button onClick={() => setEditing(newDraft(scope === "home" ? "home" : "food"))} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
+        </div>
+        {list.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
+        {list.map((e) => {
+          const cat = cats.get(e.category);
+          return (
+            <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
+              <span className="relative">
+                <CatIcon icon={cat.icon} size={36} />
+                {e.private && <span className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5"><LockIcon size={12} /></span>}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-semibold">{e.merchant || cat.label}</span>
+                <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} {thaiTime(e.spent_at)} · {cat.label} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? ` · สลิป${e.bank ? ` ${e.bank}` : ""} …${e.slip_ref.slice(-4)}` : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.note === "หักอัตโนมัติ" ? " · หักอัตโนมัติ" : ""}{e.paid_from === "personal" && scope === "home" ? " · ไม่นับในยอดบ้าน" : ""}</span>
+              </span>
+              {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
+              <span className="font-semibold">{baht(Number(e.amount))}</span>
+            </button>
+          );
+        })}
+      </section>
+    ) },
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between">
@@ -98,6 +161,8 @@ export default function MoneyPage() {
           <button key={k} role="tab" aria-selected={scope === k} onClick={() => setScope(k)} className={`min-h-10 rounded-full text-sm font-semibold ${scope === k ? "bg-cocoa text-cream" : "text-muted"}`}>{label}</button>
         ))}
       </div>
+
+      <BillRequests />
 
       <section className={`card flex flex-col gap-2 ${scope === "home" ? "bg-peach" : "bg-lavender"}`}>
         <div className="flex items-center justify-between">
@@ -125,20 +190,8 @@ export default function MoneyPage() {
         )}
       </section>
 
-      <Income scope={scope} spent={total} setAside={setAside} ym={ym} />
+      <Reorderable order={order} sections={sections} />
 
-      <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} />
-
-      {scope === "home" && <><section className="card flex items-center gap-3">
-        {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
-        <div className="flex flex-1 flex-col">
-          <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งครึ่ง)</span>
-          <span className="font-semibold">
-            {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${people.get("mom").name}โอนให้${people.get("dad").name} ${baht(owe)} บาท` : `${people.get("dad").name}โอนให้${people.get("mom").name} ${baht(-owe)} บาท`}
-          </span>
-        </div>
-        {owe !== 0 && <button onClick={() => setSettleOpen(true)} className="btn-soft min-h-10 px-3.5 text-[13px]">โอน / เคลียร์</button>}
-      </section>
       <Sheet open={settleOpen} onClose={() => setSettleOpen(false)} title="เคลียร์เงินกัน">
         {(() => {
           const to = people.get(owe > 0 ? "dad" : "mom"), from = people.get(owe > 0 ? "mom" : "dad");
@@ -155,53 +208,9 @@ export default function MoneyPage() {
         })()}
       </Sheet>
 
-      <CreditCards />
-
-      <Goals />
-
-      <section className="card flex flex-col gap-2">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-[17px] font-semibold">ค่าใช้จ่ายประจำ (fixed cost)</h2>
-          <button onClick={() => setBillOpen("new")} className="min-h-9 px-1 text-sm text-muted">+ เพิ่ม</button>
-        </div>
-        {activeBills.length === 0 && <p className="text-sm text-muted">เพิ่มค่าใช้จ่ายประจำ เลือกได้ว่าจ่ายทุกวัน ทุกเดือน หรือปีละครั้ง เช่น ค่าขนมลูก ค่าเน็ต ประกันรถ แล้วแอปจะคำนวณว่าต้องเตรียมเดือนละเท่าไร</p>}
-        {activeBills.map((b) => (
-          <button key={b.id} onClick={() => setBillOpen(b)} className="flex min-h-8 items-center justify-between text-left text-sm">
-            <span>{b.name} <span className="text-muted">· {b.period === "monthly" ? "ทุกเดือน" : `${baht(Number(b.amount))}/${BILL_PERIODS[b.period].unit}`}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}</span></span>
-            <span>{baht(monthlySetAside(Number(b.amount), b.period))}</span>
-          </button>
-        ))}
-        {activeBills.length > 0 && (
-          <div className="flex items-center justify-between border-t border-dashed border-line pt-2 font-semibold">
-            <span>ต้องเตรียมเดือนละ</span><span className="font-display text-lg">{baht(setAside)} บาท</span>
-          </div>
-        )}
-      </section></>}
-
-      <Utilities ym={ym} filter={inScope} onAdd={(category) => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category, paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" })} />
-
-      <section className="card flex flex-col gap-2.5">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-[17px] font-semibold">รายการเดือนนี้</h2>
-          <button onClick={() => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category: scope === "home" ? "home" : "other", paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" })} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
-        </div>
-        {month.rows.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
-        {month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e))).map((e) => (
-          <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{categoryLabel(e.category).slice(0, 2)}</span>}</span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate font-semibold">{e.merchant || categoryLabel(e.category)}</span>
-              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} {thaiTime(e.spent_at)} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? ` · สลิป${e.bank ? ` ${e.bank}` : ""} …${e.slip_ref.slice(-4)}` : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
-            </span>
-            {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
-            <span className="font-semibold">{baht(Number(e.amount))}</span>
-          </button>
-        ))}
-      </section>
-
       <Link href="/settings" className="text-center text-sm text-muted underline">ชวนเข้าบ้าน · จดผ่าน LINE อยู่ในหน้าตั้งค่า</Link>
 
-      <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "แก้รายการ" : "จดรายจ่าย"}>
+      <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "แก้รายการ" : editing?.bill_id ? `จด${editing.merchant}เดือนนี้` : "จดรายจ่าย"}>
         {editing && (
           <>
             <ExpenseForm key={editing.id ?? "new"} initial={editing} submitLabel={editing.id ? "บันทึก" : "จดรายจ่าย"} onSaved={() => { setEditing(null); month.refresh(); }} />
@@ -216,55 +225,10 @@ export default function MoneyPage() {
         )}
       </Sheet>
 
-      <Sheet open={!!billOpen} onClose={() => setBillOpen(null)} title={billOpen === "new" ? "เพิ่มค่าใช้จ่ายประจำ" : "แก้ค่าใช้จ่ายประจำ"}>
-        {billOpen && <BillForm key={billOpen === "new" ? "new" : billOpen.id} bill={billOpen === "new" ? null : billOpen} onDone={() => setBillOpen(null)} />}
-      </Sheet>
-
       <Sheet open={budgetOpen} onClose={() => setBudgetOpen(false)} title="งบต่อเดือน">
         <BudgetForm key={budget} current={budget} onDone={async () => { await reloadHousehold(); setBudgetOpen(false); }} householdId={hid} />
       </Sheet>
     </div>
-  );
-}
-
-function BillForm({ bill, onDone }: { bill: BillRow | null; onDone: () => void }) {
-  const [name, setName] = useState(bill?.name ?? "");
-  const [amount, setAmount] = useState(bill ? String(Number(bill.amount)) : "");
-  const [period, setPeriod] = useState<BillPeriod>(bill?.period ?? "monthly");
-  const [due, setDue] = useState(bill?.due_day ? String(bill.due_day) : "");
-  const [err, setErr] = useState<string | null>(null);
-  const n = Number(amount.replace(/,/g, ""));
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!(n > 0)) return setErr("ใส่ยอดเงินให้ถูกต้อง");
-    const row = { name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? Number(due) : null };
-    const { error } = bill ? await supabase().from("bills").update(row).eq("id", bill.id) : await supabase().from("bills").insert(row);
-    if (error) return setErr(error.message);
-    onDone();
-  }
-  return (
-    <form onSubmit={save} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm font-medium">ชื่อรายการ<input className="field" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ประกันรถ" />
-        <span className="flex flex-wrap gap-1.5 pt-1">{FIXED_COST_PRESETS.map((p) => <button type="button" key={p} className="chip" aria-pressed={name === p} onClick={() => setName(p)}>{p}</button>)}</span>
-      </label>
-      <label className="flex flex-col gap-1 text-sm font-medium">{period === "daily" ? "ยอดต่อวัน (บาท)" : "ยอดต่อครั้ง (บาท)"}<input className="field" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
-      <fieldset>
-        <legend className="mb-1.5 text-sm font-medium">จ่ายบ่อยแค่ไหน</legend>
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(BILL_PERIODS) as BillPeriod[]).map((p) => <button type="button" key={p} className="chip" aria-pressed={period === p} onClick={() => setPeriod(p)}>{BILL_PERIODS[p].label}</button>)}
-        </div>
-      </fieldset>
-      {period !== "daily" && <label className="flex flex-col gap-1 text-sm font-medium">ครบกำหนดวันที่ (ไม่ใส่ก็ได้)<input className="field" type="number" min={1} max={31} value={due} onChange={(e) => setDue(e.target.value)} /></label>}
-      {n > 0 && <p className="rounded-2xl bg-mint px-3 py-2 text-sm">ต้องเตรียมเดือนละ <b>{baht(monthlySetAside(n, period))} บาท</b>{period === "daily" ? ` (${baht(n)} × 365 วัน ÷ 12)` : ""}</p>}
-      {err && <p role="alert" className="text-sm text-rose">{err}</p>}
-      <button className="btn-dark">บันทึก</button>
-      {bill && (
-        <button type="button" className="flex min-h-11 items-center justify-center gap-1 text-sm text-rose" onClick={async () => { await supabase().from("bills").delete().eq("id", bill.id); onDone(); }}>
-          <TrashIcon />ลบรายการนี้
-        </button>
-      )}
-    </form>
   );
 }
 

@@ -19,6 +19,8 @@ export type ExpenseDraft = {
   note: string;
   slip_ref?: string | null;
   bank?: string | null;
+  /** จดจากค่าใช้จ่ายประจำ (ใหม่เท่านั้น) */
+  bill_id?: string | null;
 };
 
 export function toDraftTime(iso: string): { date: string; time: string } {
@@ -58,6 +60,7 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
       status: "confirmed" as const,
       slip_ref: d.slip_ref ?? null,
       bank: d.bank ?? null,
+      ...(d.bill_id && !d.id ? { bill_id: d.bill_id } : {}),
     };
     const q = d.id ? supabase().from("expenses").update(row).eq("id", d.id) : supabase().from("expenses").insert(row);
     const { error } = await q;

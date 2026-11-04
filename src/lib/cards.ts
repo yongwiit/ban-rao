@@ -39,13 +39,13 @@ export function dueOfStatement(card: Pick<CardRow, "statement_day" | "due_day">,
   return dateOf(card.due_day > card.statement_day ? i : i + 1, card.due_day);
 }
 /** รอบบิลแรกที่รายการนี้เข้า */
-function firstStatement(card: Pick<CardRow, "statement_day">, chargedOn: string): Mi {
+export function firstStatement(card: Pick<CardRow, "statement_day">, chargedOn: string): Mi {
   const { y, m, d } = parse(chargedOn);
   const i = mi(y, m);
   return d <= Math.min(card.statement_day, daysIn(i)) ? i : i + 1;
 }
 /** ยอดของรายการนี้ที่อยู่ในบิลรอบ i (จ่ายเต็ม = งวดเดียว, ผ่อน = หารเท่ากัน) */
-function amountOn(card: CardRow, c: ChargeRow, i: Mi): number {
+export function amountOn(card: CardRow, c: ChargeRow, i: Mi): number {
   const k = i - firstStatement(card, c.charged_on);
   if (isSub(c)) {
     if (k < 0 || (c.repeat === "yearly" && k % 12 !== 0)) return 0;
@@ -93,6 +93,8 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
     bill,
     installments,
     subs,
+    /** รอบนี้แยกตามหมวด (มากไปน้อย) */
+    cycleByCat: [...cycleCharges.reduce((m, c) => m.set(c.category ?? "other", (m.get(c.category ?? "other") ?? 0) + amountOn(card, c, open)), new Map<string, number>())].sort((a, b) => b[1] - a[1]),
     /** ยอดที่ยังไม่ได้จ่าย: บิลที่ตัดแล้วแต่ยังไม่ถึงวันจ่าย + รอบนี้ + งวดผ่อนที่เหลือหลังจากนี้ */
     outstanding: (billOpen ? sum(prev) : 0) + sum(open) + charges.filter((c) => !isSub(c)).reduce((s, c) => {
       let t = 0;
@@ -118,4 +120,17 @@ export function cardsDueInMonth(cards: CardRow[], charges: ChargeRow[], y: numbe
     }
   }
   return total;
+}
+
+/** ยอดรายการบัตรที่ตกในเดือน (นับตามวันที่รูด/วันตัด subscription ไม่ใช่ตามรอบบิล) */
+export function chargeInMonth(c: ChargeRow, y: number, m: number): number {
+  const [cy, cm] = c.charged_on.split("-").map(Number);
+  const k = mi(y, m) - mi(cy, cm - 1);
+  if (k < 0) return 0;
+  if (isSub(c)) {
+    if (c.repeat === "yearly" && k % 12 !== 0) return 0;
+    const occ = ymdOf(dateOf(mi(y, m), Number(c.charged_on.slice(8))));
+    return c.ended_on && occ > c.ended_on ? 0 : Number(c.amount);
+  }
+  return k === 0 ? Number(c.amount) : 0;
 }

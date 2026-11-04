@@ -18,6 +18,26 @@ alter table public.card_charges add constraint card_charges_repeat_full check (r
 alter table public.card_charges add column if not exists bill_mode text not null default 'person' check (bill_mode in ('home', 'person'));
 alter table public.card_charges add column if not exists bill_status text not null default 'none' check (bill_status in ('none', 'pending', 'accepted', 'rejected'));
 
+-- สถานะเรียกเก็บตั้งโดยระบบเท่านั้น: ส่งให้พ่อ/แม่ = รอยืนยัน, ลูก = แจ้งเตือนอย่างเดียว
+-- แก้ยอด/คน/แบบ/รอบ หลังยืนยันแล้ว → กลับไปรอยืนยันใหม่ · "ยืนยันแล้ว" ตั้งได้จาก respond_card_bill เท่านั้น
+create or replace function public.card_charge_bill_status() returns trigger
+language plpgsql set search_path = public as $$
+declare owner_role text;
+begin
+  if current_setting('app.bill_reply', true) = '1' then return new; end if;
+  select owner into owner_role from credit_cards where id = new.card_id;
+  if tg_op = 'UPDATE' and new.bill_to is not distinct from old.bill_to and new.bill_mode = old.bill_mode
+     and new.amount = old.amount and new.bill_amount is not distinct from old.bill_amount
+     and new.repeat = old.repeat and new.months = old.months and new.charged_on = old.charged_on then
+    new.bill_status := old.bill_status;
+  else
+    new.bill_status := case when new.bill_to in ('dad', 'mom') and new.bill_to <> owner_role then 'pending' else 'none' end;
+  end if;
+  return new;
+end $$;
+create or replace trigger card_charges_bill_status before insert or update on public.card_charges
+  for each row execute function public.card_charge_bill_status();
+
 -- ค่าใช้จ่ายประจำ
 alter table public.bills add column if not exists paid_from text not null default 'pot' check (paid_from in ('pot', 'dad', 'mom', 'personal'));
 alter table public.bills add column if not exists category text check (category is null or length(category) between 1 and 30);
@@ -138,7 +158,9 @@ begin
   where id = p_charge and household_id = public.my_household() and bill_status = 'pending'
     and bill_to = public.my_role() and created_by <> auth.uid() for update;
   if not found or not public.is_parent() then raise exception 'ไม่พบคำขอ'; end if;
+  perform set_config('app.bill_reply', '1', true);
   update card_charges set bill_status = case when p_accept then 'accepted' else 'rejected' end where id = p_charge;
+  perform set_config('app.bill_reply', '0', true);
   if p_accept then
     occ := public.last_occurrence(x, greatest(today, x.charged_on));
     if x.repeat <> 'none' then insert into auto_runs (key) values ('sub:' || x.id || ':' || occ) on conflict do nothing; end if;
@@ -157,6 +179,7 @@ grant execute on function public.respond_card_bill(uuid, boolean) to authenticat
 -- ย้อนกลับ:
 -- select cron.unschedule('record-due-bills');
 -- drop function if exists public.record_due_bills(), public.my_card_bill_requests(), public.respond_card_bill(uuid, boolean), public.record_card_share(public.card_charges, date), public.last_occurrence(public.card_charges, date);
+-- drop trigger if exists card_charges_bill_status on public.card_charges; drop function if exists public.card_charge_bill_status();
 -- drop table if exists public.auto_runs;
 -- drop policy if exists bills_personal_owner_only on public.bills;
 -- alter policy cards_rw on public.credit_cards using (household_id = public.my_household() and (not private or created_by = auth.uid())) with check (household_id = public.my_household() and (not private or created_by = auth.uid()));

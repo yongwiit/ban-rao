@@ -10,7 +10,7 @@ import type { ExpenseRow } from "@/lib/types";
 type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
 
 /** ค่าน้ำ ไฟ เน็ต โทรศัพท์ เดือนนี้เทียบเดือนก่อน (มาจากรายจ่ายหมวดนั้นๆ) */
-export function Utilities({ ym, filter, onAdd }: { ym: { y: number; m: number }; filter: (e: Row) => boolean; onAdd: (category: string) => void }) {
+export function Utilities({ ym, filter, onAdd, extra }: { ym: { y: number; m: number }; filter: (e: Row) => boolean; onAdd: (category: string) => void; extra?: (category: string, y: number, m: number) => number }) {
   const { household } = useHousehold();
   const keys = UTILITIES.map((u) => u.key as string);
   const from = monthRange(ym.y, ym.m - 5).start;
@@ -19,7 +19,8 @@ export function Utilities({ ym, filter, onAdd }: { ym: { y: number; m: number };
     supabase().from("expenses").select("amount, spent_at, category, paid_from, private, created_by").in("category", keys).gte("spent_at", from).lt("spent_at", end), [from]);
   const monthOf = (iso: string) => { const d = new Date(new Date(iso).getTime() + 7 * 36e5); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
   const cur = ym.y * 12 + ym.m;
-  const sum = (k: string, mi: number) => rows.rows.filter((e) => e.category === k && filter(e) && monthOf(e.spent_at) === mi).reduce((s, e) => s + Number(e.amount), 0);
+  const sum = (k: string, mi: number) => rows.rows.filter((e) => e.category === k && filter(e) && monthOf(e.spent_at) === mi).reduce((s, e) => s + Number(e.amount), 0)
+    + (extra ? extra(k, Math.floor(mi / 12), mi % 12) : 0);
   const total = keys.reduce((s, k) => s + sum(k, cur), 0);
 
   return (
@@ -47,7 +48,7 @@ export function Utilities({ ym, filter, onAdd }: { ym: { y: number; m: number };
           </div>
         );
       })}
-      <p className="text-xs text-muted">จดเป็นรายจ่ายหมวด ค่าน้ำ/ค่าไฟ/ค่าเน็ต/ค่าโทรศัพท์ (หรืออัปโหลดสลิป แอปเดาหมวดให้)</p>
+      <p className="text-xs text-muted">มาจากรายจ่ายหมวด ค่าน้ำ/ค่าไฟ/ค่าเน็ต/ค่าโทรศัพท์{extra ? " และรายการบัตรของฉันหมวดเดียวกัน" : ""} (อัปโหลดสลิปก็ได้ แอปเดาหมวดให้)</p>
     </section>
   );
 }

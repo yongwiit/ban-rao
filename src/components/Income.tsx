@@ -27,11 +27,12 @@ export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine";
   // ของบ้าน = รายได้/บัตรที่ไม่ได้ซ่อน · ของฉัน = ของฉันเอง (รวมที่ซ่อนไว้)
   const myIncome = (i: IncomeRow) => i.created_by === userId || i.who === role;
   const inc = incomes.rows.filter((i) => (scope === "home" ? !i.private : myIncome(i)));
-  const myCards = cards.filter((c) => (scope === "home" ? !c.private : c.created_by === userId && (c.private || c.owner === role)));
+  // บัตรของใครของมัน: นับเฉพาะในแท็บ "ของฉัน" (ส่วนที่เข้าเงินบ้านจะถูกจดเป็นรายจ่ายบ้านหลังอีกฝ่ายยืนยัน)
+  const myCards = scope === "mine" ? cards.filter((c) => c.owner === role || c.created_by === userId) : [];
   const total = inc.reduce((s, i) => s + Number(i.amount), 0);
   const cardDue = cardsDueInMonth(myCards, charges, ym.y, ym.m);
   const installments = myCards.reduce((s, c) => s + cardSummary(c, charges.filter((x) => x.card_id === c.id), today).monthlyInstallments, 0);
-  const fixed = scope === "home" ? setAside : 0;
+  const fixed = setAside;
   const used = spent + cardDue;
   const left = total - used;
   const usedPct = pct(used, total);
@@ -59,7 +60,7 @@ export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine";
           </span>
           <div className="flex flex-col gap-0.5 text-sm">
             <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />รายจ่ายที่จด</span><span>{baht(spent)} · {pct(spent, total)}%</span></span>
-            <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#8A6FC7]" />บิลบัตรเครดิตที่ครบจ่ายเดือนนี้</span><span>{baht(cardDue)} · {pct(cardDue, total)}%</span></span>
+            {scope === "mine" && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#8A6FC7]" />บิลบัตรเครดิตที่ครบจ่ายเดือนนี้</span><span>{baht(cardDue)} · {pct(cardDue, total)}%</span></span>}
             <span className="flex justify-between border-t border-dashed border-line pt-1 font-semibold"><span>{left >= 0 ? "เหลือ" : "ใช้เกินรายได้"}</span><span>{baht(Math.abs(left))} บาท</span></span>
           </div>
           {(fixed > 0 || installments > 0) && (

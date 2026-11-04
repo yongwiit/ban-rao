@@ -1,6 +1,9 @@
 "use client";
 
-import { categoryLabel, isHouseholdSpend } from "@/lib/family";
+import { useState } from "react";
+import { isHouseholdSpend } from "@/lib/family";
+import { ICON_TONE } from "@/lib/categoryIcons";
+import { CatIcon, useCategories } from "./Categories";
 import { baht, dayKey, monthRange, thaiDate } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
@@ -8,9 +11,8 @@ import type { ExpenseRow } from "@/lib/types";
 
 type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
 const MONTHS = 6;
-const BAR_COLORS = ["#D9738F", "#5E8FC9", "#5FA37E", "#D9941F", "#9B7FD1", "#C9A27E", "#7A6A63"];
 
-/** กราฟแท่งยอดใช้ของบ้านย้อนหลัง 6 เดือน + แยกตามหมวดของเดือนที่เลือก */
+/** กราฟแท่งยอดใช้ย้อนหลัง 6 เดือน (แต่ละแท่งซ้อนสีตามหมวด) + แยกตามหมวดของเดือนที่เลือก */
 type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean; filter?: (e: Row) => boolean };
 
 export function SpendHistory({ householdId, ...view }: ViewProps & { householdId: string }) {
@@ -25,6 +27,8 @@ export function SpendHistory({ householdId, ...view }: ViewProps & { householdId
 
 export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, filter = isHouseholdSpend }: ViewProps & { rows: Row[] }) {
   const now = new Date();
+  const catInfo = useCategories();
+  const [focus, setFocus] = useState<string | null>(null);
   const months = Array.from({ length: MONTHS }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS - 1 - i), 1);
     return { y: d.getFullYear(), m: d.getMonth(), key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` };
@@ -43,6 +47,11 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, fil
   const cats = Object.entries(byCat[selKey] ?? {}).sort((a, b) => b[1] - a[1]);
   const selTotal = totals[selKey] ?? 0;
   const avg = months.reduce((s, m) => s + (totals[m.key] ?? 0), 0) / MONTHS;
+  // ลำดับหมวดคงที่ทุกแท่ง (ใหญ่สุดของ 6 เดือนอยู่ล่าง)
+  const allTotals: Record<string, number> = {};
+  for (const k of Object.keys(byCat)) for (const [c, v] of Object.entries(byCat[k])) allTotals[c] = (allTotals[c] ?? 0) + v;
+  const order = Object.keys(allTotals).sort((a, b) => allTotals[b] - allTotals[a]);
+  const colorOf = (c: string) => ICON_TONE[catInfo.get(c).icon][0];
 
   return (
     <section className="card flex flex-col gap-3">
@@ -59,17 +68,21 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, fil
         )}
         <div className="flex h-full items-end gap-2">
           {months.map((m) => {
-            const v = totals[m.key] ?? 0;
+            const v = focus ? byCat[m.key]?.[focus] ?? 0 : totals[m.key] ?? 0;
             const on = m.key === selKey;
             const over = budgetOn && budget > 0 && v > budget;
             return (
               <button key={m.key} onClick={() => onPick({ y: m.y, m: m.m })} aria-pressed={on}
                 aria-label={`${thaiDate(new Date(m.y, m.m, 15), { month: "long" })} ${baht(v)} บาท`}
                 className="relative flex h-full flex-1 items-end justify-center">
-                <span className={`relative w-full max-w-9 rounded-t-lg ${over ? "bg-rose" : on ? "bg-cocoa" : "bg-mint-strong"}`}
-                  style={{ height: `${Math.max(3, (v / max) * 100)}%` }}>
-                  <span className={`absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] ${on ? "font-semibold" : "text-muted"}`}>{v >= 1000 ? `${baht(v / 1000, v < 10000 ? 1 : 0)}k` : baht(v)}</span>
+                <span className={`relative flex w-full max-w-9 flex-col-reverse overflow-hidden rounded-t-lg bg-sand ${on ? "ring-2 ring-cocoa ring-offset-1" : over ? "ring-2 ring-rose" : ""}`}
+                  style={{ height: `${Math.max(3, (v / max) * 100)}%`, opacity: on ? 1 : 0.75 }}>
+                  {(focus ? [focus] : order).map((c) => {
+                    const cv = byCat[m.key]?.[c] ?? 0;
+                    return cv > 0 ? <span key={c} className="block w-full shrink-0" style={{ height: `${(cv / (v || 1)) * 100}%`, background: colorOf(c) }} /> : null;
+                  })}
                 </span>
+                <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] ${on ? "font-semibold" : "text-muted"}`} style={{ bottom: `calc(${Math.max(3, (v / max) * 100)}% + 2px)` }}>{v >= 1000 ? `${baht(v / 1000, v < 10000 ? 1 : 0)}k` : baht(v)}</span>
               </button>
             );
           })}
@@ -82,14 +95,27 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, fil
       </div>
 
       <div className="flex flex-col gap-2 border-t border-dashed border-line pt-3">
-        <span className="text-sm font-semibold">{thaiDate(new Date(selected.y, selected.m, 15), { month: "long", year: "numeric" })} แยกตามหมวด</span>
-        {cats.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายจ่ายของบ้านเดือนนี้</p>}
-        {cats.map(([c, v], i) => (
-          <div key={c} className="flex flex-col gap-1 text-sm">
-            <div className="flex justify-between"><span>{categoryLabel(c)}</span><span>{baht(v)} <span className="text-muted">· {Math.round((v / selTotal) * 100)}%</span></span></div>
-            <span className="h-2 overflow-hidden rounded-full bg-sand"><span className="block h-2 rounded-full" style={{ width: `${(v / selTotal) * 100}%`, background: BAR_COLORS[i % BAR_COLORS.length] }} /></span>
-          </div>
-        ))}
+        <span className="flex items-baseline justify-between text-sm font-semibold">
+          <span>{thaiDate(new Date(selected.y, selected.m, 15), { month: "long", year: "numeric" })} แยกตามหมวด</span>
+          {focus && <button className="text-xs font-normal text-muted underline" onClick={() => setFocus(null)}>ดูทุกหมวด</button>}
+        </span>
+        {cats.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายจ่ายเดือนนี้</p>}
+        {cats.map(([c, v]) => {
+          const info = catInfo.get(c);
+          const prevKey = months[months.findIndex((m) => m.key === selKey) - 1]?.key;
+          const prev = prevKey ? byCat[prevKey]?.[c] ?? 0 : 0;
+          return (
+            <button key={c} onClick={() => setFocus(focus === c ? null : c)} aria-pressed={focus === c} className={`flex items-center gap-2.5 rounded-2xl text-left text-sm ${focus && focus !== c ? "opacity-50" : ""}`}>
+              <CatIcon icon={info.icon} size={34} />
+              <span className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="flex justify-between gap-2"><span className="truncate">{info.label}</span><span className="shrink-0">{baht(v)} <span className="text-muted">· {Math.round((v / selTotal) * 100)}%</span></span></span>
+                <span className="h-2 overflow-hidden rounded-full bg-sand"><span className="block h-2 rounded-full" style={{ width: `${(v / selTotal) * 100}%`, background: colorOf(c) }} /></span>
+                {prev > 0 && <span className="text-[11px] text-muted">{v > prev ? "▲" : v < prev ? "▼" : "="} เดือนก่อน {baht(prev)}</span>}
+              </span>
+            </button>
+          );
+        })}
+        {cats.length > 0 && <p className="text-xs text-muted">แตะหมวดเพื่อดูกราฟย้อนหลังเฉพาะหมวดนั้น</p>}
       </div>
     </section>
   );

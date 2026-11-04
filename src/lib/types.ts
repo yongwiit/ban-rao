@@ -14,8 +14,16 @@ export type ExpenseRow = {
   id: string; amount: number; spent_at: string; merchant: string; category: Category; paid_from: PaidFrom;
   private: boolean; status: "pending" | "confirmed"; slip_ref: string | null; bank: string | null;
   note: string | null; created_by: string; created_at: string;
+  bill_id?: string | null; card_charge_id?: string | null;
 };
-export type BillRow = { id: string; name: string; amount: number; period: BillPeriod; due_day: number | null; active: boolean };
+export type BillRow = {
+  id: string; name: string; amount: number; period: BillPeriod; due_day: number | null; active: boolean;
+  paid_from: PaidFrom; category: string | null; created_by: string | null;
+  /** หักบัญชีอัตโนมัติ: ระบบจดรายจ่ายให้ทุกเดือนในวันครบกำหนด (ตั้งแต่ auto_from) */
+  auto_record: boolean; auto_from: string | null;
+  /** ยอดไม่คงที่: เตือนให้จดยอดจริงทุกเดือน */
+  variable: boolean;
+};
 export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
 export type MemberRow = { user_id: string; role: Role };
 export type StarTask = { id: string; title: string; stars: number; emoji: string; kid: string | null; active: boolean };
