@@ -109,17 +109,24 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
 }
 
 /** ยอดบัตรที่ครบกำหนดจ่ายในเดือนนั้น (y, m: 0-11) รวมทุกบัตร */
-export function cardsDueInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): number {
+/** บิลบัตรแต่ละใบที่ครบกำหนดจ่ายในเดือนนี้ (ปี y เดือน m แบบ 0–11) */
+export function cardBillsInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): { card: CardRow; due: Date; amount: number }[] {
   const target = mi(y, m);
-  let total = 0;
+  const out: { card: CardRow; due: Date; amount: number }[] = [];
   for (const card of cards) {
     const mine = charges.filter((c) => c.card_id === card.id);
     for (let i = target - 2; i <= target; i++) {
       const due = dueOfStatement(card, i);
-      if (mi(due.getFullYear(), due.getMonth()) === target) total += mine.reduce((s, c) => s + amountOn(card, c, i), 0);
+      if (mi(due.getFullYear(), due.getMonth()) !== target) continue;
+      const amount = mine.reduce((s, c) => s + amountOn(card, c, i), 0);
+      if (amount > 0) out.push({ card, due, amount });
     }
   }
-  return total;
+  return out;
+}
+
+export function cardsDueInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): number {
+  return cardBillsInMonth(cards, charges, y, m).reduce((s, b) => s + b.amount, 0);
 }
 
 /** ยอดรายการบัตรที่ตกในเดือน (นับตามวันที่รูด/วันตัด subscription ไม่ใช่ตามรอบบิล) */

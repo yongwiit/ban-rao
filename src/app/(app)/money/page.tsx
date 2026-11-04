@@ -6,11 +6,11 @@ import { PromptPayQR } from "@/components/PromptPayQR";
 import { Goals } from "@/components/Goals";
 import { CreditCards, useCards } from "@/components/CreditCards";
 import { BillRequests } from "@/components/BillRequests";
-import { FixedCosts, fixedMonthly } from "@/components/FixedCosts";
+import { FixedCosts } from "@/components/FixedCosts";
 import { Reorderable, useSectionOrder } from "@/components/Reorder";
 import { CatIcon, useCategories } from "@/components/Categories";
 import { activeSub } from "@/lib/cards";
-import { Income } from "@/components/Income";
+import { MonthCard } from "@/components/Income";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
 import { validPromptPay } from "@/lib/promptpay";
@@ -67,13 +67,8 @@ export default function MoneyPage() {
   const today = dayKey(now);
   const activeBills = bills.rows.filter((b) => b.active && (scope === "home" ? b.paid_from !== "personal" : b.paid_from === "personal" && b.created_by === userId));
   const mySubs = scope === "mine" ? cards.charges.filter((c) => activeSub(c, today)) : [];
-  const setAside = fixedMonthly(activeBills, mySubs);
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const order = useSectionOrder(scope);
-  // เดือนนี้: ค่าใช้จ่ายประจำรายเดือนที่ยังไม่ได้จด (ยังไม่ถึงวัน หรือยอดไม่คงที่ที่ยังไม่กรอก) นับรวมใน % ไว้ก่อน
-  const pendingFixed = isThisMonth ? activeBills.filter((b) => b.period === "monthly" && !month.rows.some((e) => e.bill_id === b.id)
-    && (b.variable || b.due_day == null || b.due_day >= now.getDate())).reduce((s, b) => s + Number(b.amount), 0) : 0;
-  const daysLeft = new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1;
 
   async function toggleBudget() {
     await supabase().from("households").update({ budget_enabled: !household.budget_enabled }).eq("id", hid);
@@ -101,7 +96,6 @@ export default function MoneyPage() {
   const list = month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e)));
 
   const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
-    income: { label: "💼 รายได้ & ใช้ไปกี่ %", node: <Income scope={scope} spent={total} setAside={setAside} ym={ym} pendingFixed={pendingFixed} /> },
     history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
     settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
       <section className="card flex items-center gap-3">
@@ -161,11 +155,11 @@ export default function MoneyPage() {
 
       <BillRequests />
 
-      <section className={`card flex flex-col gap-2 ${scope === "home" ? "bg-peach" : "bg-lavender"}`}>
+      <MonthCard scope={scope} spent={total} bills={activeBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} header={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button aria-label="เดือนก่อน" onClick={() => shift(-1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon dir="left" size={16} /></button>
-            <span className="text-sm">{thaiDate(new Date(ym.y, ym.m, 15), { month: "long", year: "numeric" })} ใช้ไป</span>
+            <span className="text-sm font-semibold">{thaiDate(new Date(ym.y, ym.m, 15), { month: "long", year: "numeric" })}</span>
             <button aria-label="เดือนถัดไป" onClick={() => shift(1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon size={16} /></button>
           </div>
           {scope === "home" && <button onClick={toggleBudget} aria-pressed={household.budget_enabled} className="flex h-8 items-center gap-1.5 rounded-xl bg-white px-2.5 text-[13px]">
@@ -174,18 +168,7 @@ export default function MoneyPage() {
             </span>ใช้งบ
           </button>}
         </div>
-        <span className="font-display text-[30px] font-bold">{baht(total)} <span className="text-base font-medium">บาท</span></span>
-        {scope === "mine" && <span className="text-xs text-muted">รายการที่คุณจดเป็น &quot;จ่ายส่วนตัว&quot; หรือ &quot;เห็นคนเดียว&quot; · ไม่นับรวมในยอดบ้าน</span>}
-        {scope === "home" && household.budget_enabled && (
-          <button onClick={() => setBudgetOpen(true)} className="flex flex-col gap-1 text-left">
-            <span className="h-2.5 overflow-hidden rounded-full bg-white"><span className="block h-2.5 bg-rose" style={{ width: `${Math.min(100, budget ? (total / budget) * 100 : 0)}%` }} /></span>
-            <span className="text-xs">
-              งบ {baht(budget)} · {total <= budget ? `เหลือ ${baht(budget - total)} บาท` : `เกินงบ ${baht(total - budget)} บาท`}
-              {isThisMonth && total <= budget ? ` สำหรับ ${daysLeft} วัน` : ""} · <b className="underline">ปรับงบ</b>
-            </span>
-          </button>
-        )}
-      </section>
+      } />
 
       <Reorderable order={order} sections={sections} />
 

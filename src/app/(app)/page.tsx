@@ -65,7 +65,8 @@ export default function TodayPage() {
   const pending = spend.rows.filter((e) => e.status === "pending").length;
   const cards = useCards(isParent ? hid : undefined);
   const dueSoon = [
-        ...bills.rows.filter((b) => b.due_day).map((b) => ({ name: b.name, due: nextDue(b.due_day!) })),
+        // ข้ามบิลที่จดเดือนนี้ไปแล้ว (เช่น หักบัญชีอัตโนมัติ)
+        ...bills.rows.filter((b) => b.due_day && !spend.rows.some((e) => e.bill_id === b.id)).map((b) => ({ name: b.name, due: nextDue(b.due_day!) })),
         // บิลบัตรเครดิตที่ตัดรอบแล้วและยังมียอด
         ...cards.cards.map((c) => ({ c, s: cardSummary(c, cards.charges.filter((x) => x.card_id === c.id), today) }))
           .filter(({ s }) => s.bill.closed && s.bill.amount > 0).map(({ c, s }) => ({ name: `💳${c.name}`, due: s.bill.due })),
