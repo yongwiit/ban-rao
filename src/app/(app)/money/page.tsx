@@ -9,7 +9,7 @@ import { BillRequests } from "@/components/BillRequests";
 import { FixedCosts } from "@/components/FixedCosts";
 import { Reorderable, useSectionOrder } from "@/components/Reorder";
 import { CatIcon, useCategories } from "@/components/Categories";
-import { activeSub, chargeInMonth } from "@/lib/cards";
+import { activeSub, chargeInMonth, isSub } from "@/lib/cards";
 import { MonthCard } from "@/components/Income";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
@@ -104,9 +104,13 @@ export default function MoneyPage() {
     for (let i = 0; i < 6; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 15);
       for (const c of cards.charges) {
-        let v = chargeInMonth(c, d.getFullYear(), d.getMonth());
+        // ผ่อน: นับเดือนละงวด (ยอด ÷ จำนวนเดือน) ตั้งแต่เดือนที่รูด ไม่ใช่ยอดเต็มเดือนแรก
+        const [cy, cm] = c.charged_on.split("-").map(Number);
+        const k = (d.getFullYear() - cy) * 12 + d.getMonth() - (cm - 1);
+        const inst = c.months > 1 && !isSub(c);
+        let v = inst ? (k >= 0 && k < c.months ? Number(c.amount) / c.months : 0) : chargeInMonth(c, d.getFullYear(), d.getMonth());
         if (v <= 0) continue;
-        if (c.bill_to && c.bill_status === "accepted") v = c.bill_mode === "home" ? 0 : Math.max(0, v - Number(c.bill_amount ?? 0));
+        if (c.bill_to && c.bill_status === "accepted") v = c.bill_mode === "home" ? 0 : Math.max(0, v - Number(c.bill_amount ?? 0) / (inst ? c.months : 1));
         if (v > 0) cardRows.push({ amount: v, spent_at: d.toISOString(), category: c.category ?? "other", paid_from: "personal", private: false, created_by: userId });
       }
     }
