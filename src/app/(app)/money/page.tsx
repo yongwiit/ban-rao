@@ -73,8 +73,11 @@ export default function MoneyPage() {
   const cardUtil = (k: string, y: number, m: number) => cards.charges
     .filter((c) => c.category === k && (!c.bill_to || c.bill_status === "rejected"))
     .reduce((s, c) => s + chargeInMonth(c, y, m), 0);
-  const order = useSectionOrder(scope);
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
+  const order = useSectionOrder(scope);
+  // เดือนนี้: ค่าใช้จ่ายประจำรายเดือนที่ยังไม่ได้จด (ยังไม่ถึงวัน หรือยอดไม่คงที่ที่ยังไม่กรอก) นับรวมใน % ไว้ก่อน
+  const pendingFixed = isThisMonth ? activeBills.filter((b) => b.period === "monthly" && !month.rows.some((e) => e.bill_id === b.id)
+    && (b.variable || b.due_day == null || b.due_day >= now.getDate())).reduce((s, b) => s + Number(b.amount), 0) : 0;
   const daysLeft = new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1;
 
   async function toggleBudget() {
@@ -103,7 +106,7 @@ export default function MoneyPage() {
   const list = month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e)));
 
   const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
-    income: { label: "💼 รายได้ & ใช้ไปกี่ %", node: <Income scope={scope} spent={total} setAside={setAside} ym={ym} /> },
+    income: { label: "💼 รายได้ & ใช้ไปกี่ %", node: <Income scope={scope} spent={total} setAside={setAside} ym={ym} pendingFixed={pendingFixed} /> },
     history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
     settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
       <section className="card flex items-center gap-3">

@@ -55,7 +55,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
                 <span className="truncate font-semibold">{b.name}</span>
                 <span className="text-xs text-muted">
                   {b.variable ? "ยอดไม่คงที่ ~" : ""}{baht(Number(b.amount))}/{BILL_PERIODS[b.period].unit}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}
-                  {b.auto_record ? " · หักบัญชีอัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}
+                  {b.auto_record ? " · จดให้อัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}
                 </span>
               </span>
             </button>
@@ -109,7 +109,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
   const [due, setDue] = useState(bill?.due_day ? String(bill.due_day) : "");
   const [cat, setCat] = useState(bill?.category ?? (scope === "home" ? "bill" : "car"));
   const [paidFrom, setPaidFrom] = useState<PaidFrom>(bill?.paid_from ?? (scope === "home" ? "pot" : "personal"));
-  const [method, setMethod] = useState<Method>(bill?.variable ? "variable" : bill?.auto_record ? "auto" : "manual");
+  const [method, setMethod] = useState<Method>(bill?.variable ? "variable" : bill?.auto_record || !bill ? "auto" : "manual");
   const [err, setErr] = useState<string | null>(null);
   const n = Number(amount.replace(/,/g, ""));
   const monthly = period === "monthly";
@@ -119,7 +119,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
     if (!name.trim()) return setErr("ใส่ชื่อรายการก่อนนะ");
     if (!(n > 0)) return setErr(method === "variable" ? "ใส่ยอดประมาณต่อเดือน (ไว้คำนวณเงินที่ต้องเตรียม)" : "ใส่ยอดเงินให้ถูกต้อง");
     const d = Number(due);
-    if (method === "auto" && !(monthly && d >= 1 && d <= 31)) return setErr("หักบัญชีอัตโนมัติ ต้องเป็นรายเดือนและใส่วันที่หัก");
+    if (method === "auto" && monthly && !(d >= 1 && d <= 31)) return setErr("ใส่วันที่จ่ายทุกเดือน (1–31) แอปจะจดรายจ่ายให้วันนั้น");
     const auto = method === "auto" && monthly;
     const row = {
       name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? d : null, category: cat, paid_from: paidFrom,
@@ -142,16 +142,16 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายบ่อยแค่ไหน</legend>
         <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(BILL_PERIODS) as BillPeriod[]).map((p) => <button type="button" key={p} className="chip" aria-pressed={period === p} onClick={() => { setPeriod(p); if (p !== "monthly" && method === "auto") setMethod("manual"); }}>{BILL_PERIODS[p].label}</button>)}
+          {(Object.keys(BILL_PERIODS) as BillPeriod[]).map((p) => <button type="button" key={p} className="chip" aria-pressed={period === p} onClick={() => setPeriod(p)}>{BILL_PERIODS[p].label}</button>)}
         </div>
       </fieldset>
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายยังไง</legend>
         <div className="flex flex-col gap-1.5">
           {([
-            ["manual", "จ่ายเอง ยอดเท่าเดิม", "กดจดเมื่อจ่ายแล้ว (ยอดเติมให้)"],
-            ["auto", "🏦 หักบัญชีอัตโนมัติ", "เช่น ค่าผ่อนรถหักทุกวันที่ 5 · แอปจดรายจ่ายให้เองทุกเดือน"],
-            ["variable", "📱 ยอดไม่คงที่", "เช่น ค่าโทร ค่าเน็ต โอนผ่านแอป · ใส่ยอดประมาณไว้ แล้วจดยอดจริงทุกเดือน"],
+            ["auto", "🔁 ยอดเท่าเดิม · จดให้เองทุกเดือน", "เช่น ค่าผ่อนรถหักบัญชีวันที่ 5, ค่าเช่า · ถึงวันแอปบันทึกเป็นรายจ่ายจริงให้"],
+            ["variable", "📱 ยอดไม่คงที่", "เช่น ค่าโทร ค่าไฟ โอนผ่านแอป · ใส่ยอดประมาณไว้ แล้วกด \"จดยอดเดือนนี้\" ทุกเดือน"],
+            ["manual", "✋ จดเองเมื่อจ่าย", "ยอดเท่าเดิม แต่อยากกดจดเอง (ยอดเติมให้)"],
           ] as const).map(([k, label, hint]) => (
             <button type="button" key={k} aria-pressed={method === k} disabled={k === "auto" && !monthly} onClick={() => setMethod(k)}
               className={`rounded-2xl border p-2.5 text-left text-sm disabled:opacity-40 ${method === k ? "border-cocoa bg-peach" : "border-line"}`}>
@@ -162,7 +162,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
       </fieldset>
       <div className="grid grid-cols-2 gap-3">
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">{method === "variable" ? "ประมาณ (บาท)" : period === "daily" ? "ยอดต่อวัน (บาท)" : "ยอดต่อครั้ง (บาท)"}<input className="field min-w-0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))} /></label>
-        {period !== "daily" && <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">{method === "auto" ? "หักทุกวันที่" : "ครบกำหนดวันที่"}<input className="field min-w-0" type="number" min={1} max={31} value={due} onChange={(e) => setDue(e.target.value)} placeholder={method === "auto" ? "เช่น 5" : "ไม่ใส่ก็ได้"} /></label>}
+        {period !== "daily" && <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">{method === "auto" && monthly ? "จ่ายทุกวันที่" : "ครบกำหนดวันที่"}<input className="field min-w-0" type="number" min={1} max={31} value={due} onChange={(e) => setDue(e.target.value)} placeholder={method === "auto" && monthly ? "เช่น 5" : "ไม่ใส่ก็ได้"} /></label>}
       </div>
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">ใครจ่าย</legend>

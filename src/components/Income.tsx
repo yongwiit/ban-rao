@@ -16,7 +16,7 @@ const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
  * เงินเดือน / รายได้ต่อเดือน → ดูว่าใช้ไปกี่ % (รายจ่ายที่จด + บิลบัตรที่ครบจ่ายเดือนนั้น)
  * และภาระประจำ (ค่าใช้จ่ายประจำ + ผ่อนบัตร) กี่ % ของรายได้
  */
-export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine"; spent: number; setAside: number; ym: { y: number; m: number } }) {
+export function Income({ scope, spent, setAside, ym, pendingFixed = 0 }: { scope: "home" | "mine"; spent: number; setAside: number; ym: { y: number; m: number }; pendingFixed?: number }) {
   const { household, people, userId, role } = useHousehold();
   const hid = household.id;
   const incomes = useLive<IncomeRow>("incomes", hid, () => supabase().from("incomes").select("*").order("created_at"));
@@ -33,7 +33,7 @@ export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine";
   const cardDue = cardsDueInMonth(myCards, charges, ym.y, ym.m);
   const installments = myCards.reduce((s, c) => s + cardSummary(c, charges.filter((x) => x.card_id === c.id), today).monthlyInstallments, 0);
   const fixed = setAside;
-  const used = spent + cardDue;
+  const used = spent + cardDue + pendingFixed;
   const left = total - used;
   const usedPct = pct(used, total);
   const seg = (v: number) => `${Math.min(100, total > 0 ? (v / total) * 100 : 0)}%`;
@@ -57,10 +57,12 @@ export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine";
           <span className="flex h-3 overflow-hidden rounded-full bg-sand" aria-hidden>
             <span className="block h-3 bg-rose" style={{ width: seg(spent) }} />
             <span className="block h-3 bg-[#8A6FC7]" style={{ width: seg(cardDue) }} />
+            <span className="block h-3 bg-[repeating-linear-gradient(45deg,#E7A6B6_0_4px,#F3D3DB_4px_8px)]" style={{ width: seg(pendingFixed) }} />
           </span>
           <div className="flex flex-col gap-0.5 text-sm">
             <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />รายจ่ายที่จด</span><span>{baht(spent)} · {pct(spent, total)}%</span></span>
             {scope === "mine" && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#8A6FC7]" />บิลบัตรเครดิตที่ครบจ่ายเดือนนี้</span><span>{baht(cardDue)} · {pct(cardDue, total)}%</span></span>}
+            {pendingFixed > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#E7A6B6]" />ค่าใช้จ่ายประจำที่ยังไม่ถึงวันจ่าย</span><span>{baht(pendingFixed)} · {pct(pendingFixed, total)}%</span></span>}
             <span className="flex justify-between border-t border-dashed border-line pt-1 font-semibold"><span>{left >= 0 ? "เหลือ" : "ใช้เกินรายได้"}</span><span>{baht(Math.abs(left))} บาท</span></span>
           </div>
           {(fixed > 0 || installments > 0) && (
