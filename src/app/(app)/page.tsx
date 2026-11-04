@@ -9,6 +9,7 @@ import { PEOPLE } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { daysUntil, nextDue } from "@/lib/bills";
 import { supabase } from "@/lib/supabase";
+import { eventWhen, overlapFilter } from "@/lib/events";
 import { useLive } from "@/lib/useLive";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
@@ -28,7 +29,7 @@ export default function TodayPage() {
   const dayEnd = new Date(`${today}T23:59:59+07:00`).toISOString();
 
   const events = useLive<EventRow>("events", hid, () =>
-    supabase().from("events").select("*").gte("starts_at", dayStart).lte("starts_at", dayEnd).order("starts_at"), [dayStart]);
+    supabase().from("events").select("*").lte("starts_at", dayEnd).or(overlapFilter(dayStart)).order("starts_at"), [dayStart]);
   const items = useLive<ItemRow>("shopping_items", hid, () =>
     supabase().from("shopping_items").select("*").eq("done", false).order("created_at"));
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").eq("active", true));
@@ -88,7 +89,7 @@ export default function TodayPage() {
             <span className="h-9 w-1.5 rounded-full" style={{ background: PEOPLE[e.who].color }} />
             <div className="flex flex-col">
               <span className="font-semibold">{e.title}</span>
-              <span className="text-sm text-muted">{e.all_day ? "ทั้งวัน" : thaiTime(e.starts_at)} · {PEOPLE[e.who].name}</span>
+              <span className="text-sm text-muted">{eventWhen(e, today)} · {PEOPLE[e.who].name}</span>
             </div>
           </div>
         ))}

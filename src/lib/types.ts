@@ -1,7 +1,7 @@
 import type { BillPeriod, Category, PaidFrom, Role, Who } from "./family";
 
 export type EventRow = {
-  id: string; title: string; starts_at: string; all_day: boolean; who: Who;
+  id: string; title: string; starts_at: string; ends_at: string | null; all_day: boolean; who: Who;
   note: string | null; private: boolean; created_by: string;
 };
 export type CommentRow = { id: string; event_id: string; body: string; created_by: string; created_at: string };

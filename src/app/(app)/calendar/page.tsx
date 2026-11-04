@@ -6,7 +6,8 @@ import { Sheet } from "@/components/Sheet";
 import { Bear } from "@/components/Mascots";
 import { ChatIcon, ChevronIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
 import { PEOPLE, type Who } from "@/lib/family";
-import { dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
+import { dayKey, monthRange, thaiDate } from "@/lib/format";
+import { eventDays, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { CommentRow, EventRow } from "@/lib/types";
@@ -24,11 +25,11 @@ export default function CalendarPage() {
   const { start, end } = monthRange(ym.y, ym.m);
 
   const events = useLive<EventRow>("events", household.id, () =>
-    supabase().from("events").select("*").gte("starts_at", start).lt("starts_at", end).order("starts_at"), [start]);
+    supabase().from("events").select("*").lt("starts_at", end).or(overlapFilter(start)).order("starts_at"), [start]);
 
   const byDay = useMemo(() => {
     const map: Record<string, EventRow[]> = {};
-    for (const e of events.rows) (map[dayKey(e.starts_at)] ??= []).push(e);
+    for (const e of events.rows) for (const d of eventDays(e)) (map[d] ??= []).push(e);
     return map;
   }, [events.rows]);
 
@@ -77,7 +78,7 @@ export default function CalendarPage() {
               >
                 {d}
                 <span className="flex h-1.5 gap-0.5">
-                  {(byDay[key(d)] ?? []).slice(0, 4).map((e) => <span key={e.id} className="size-1.5 rounded-full" style={{ background: PEOPLE[e.who].color }} />)}
+                  {(byDay[key(d)] ?? []).slice(0, 4).map((e) => <span key={e.id} className={`h-1.5 rounded-full ${isMultiDay(e) ? "w-3" : "w-1.5"}`} style={{ background: PEOPLE[e.who].color }} />)}
                 </span>
               </button>
             ),
@@ -91,7 +92,7 @@ export default function CalendarPage() {
           <div className="flex items-center gap-3 rounded-[20px] bg-white p-4 text-sm text-muted"><Bear size={36} />ว่าง ไม่มีนัด</div>
         )}
         {selected.map((e) => (
-          <EventCard key={e.id} e={e} mine={e.created_by === userId} open={openId === e.id} onToggle={() => setOpenId(openId === e.id ? null : e.id)} householdId={household.id} />
+          <EventCard key={e.id} e={e} day={sel} mine={e.created_by === userId} open={openId === e.id} onToggle={() => setOpenId(openId === e.id ? null : e.id)} householdId={household.id} />
         ))}
       </section>
 
@@ -100,7 +101,7 @@ export default function CalendarPage() {
   );
 }
 
-function EventCard({ e, mine, open, onToggle, householdId }: { e: EventRow; mine: boolean; open: boolean; onToggle: () => void; householdId: string }) {
+function EventCard({ e, day, mine, open, onToggle, householdId }: { e: EventRow; day: string; mine: boolean; open: boolean; onToggle: () => void; householdId: string }) {
   const comments = useLive<CommentRow>("event_comments", householdId, () =>
     supabase().from("event_comments").select("*").eq("event_id", e.id).order("created_at"), [e.id]);
   const [text, setText] = useState("");
@@ -120,7 +121,7 @@ function EventCard({ e, mine, open, onToggle, householdId }: { e: EventRow; mine
         <span className="w-1.5 self-stretch rounded-full" style={{ background: PEOPLE[e.who].color }} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-center gap-1.5 font-semibold">{e.title}{e.private && <LockIcon className="text-muted" />}</span>
-          <span className="text-sm text-muted">{e.all_day ? "ทั้งวัน" : thaiTime(e.starts_at)} · {PEOPLE[e.who].name}{e.private ? " · เห็นคนเดียว" : ""}</span>
+          <span className="text-sm text-muted">{eventWhen(e, day)} · {PEOPLE[e.who].name}{e.private ? " · เห็นคนเดียว" : ""}</span>
         </span>
         {comments.rows.length > 0 && <span className="flex items-center gap-1 text-xs text-muted"><ChatIcon />{comments.rows.length}</span>}
       </button>
@@ -145,22 +146,27 @@ function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; 
   const [date, setDate] = useState(day);
   const [time, setTime] = useState("09:00");
   const [allDay, setAllDay] = useState(false);
+  const [multi, setMulti] = useState(false);
+  const [endDate, setEndDate] = useState(day);
   const [who, setWho] = useState<Who>("all");
   const [note, setNote] = useState("");
   const [priv, setPriv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastDay, setLastDay] = useState(day);
-  if (day !== lastDay) { setLastDay(day); setDate(day); }
+  if (day !== lastDay) { setLastDay(day); setDate(day); setEndDate(day); }
 
   async function save(ev: React.FormEvent) {
     ev.preventDefault();
+    if (multi && endDate < date) return setErr("วันกลับต้องไม่ก่อนวันไป");
     setBusy(true);
-    const starts_at = new Date(`${date}T${allDay ? "00:00" : time}:00+07:00`).toISOString();
-    const { error } = await supabase().from("events").insert({ title: title.trim(), starts_at, all_day: allDay, who, note: note.trim() || null, private: priv });
+    const isAllDay = allDay || multi;
+    const starts_at = new Date(`${date}T${isAllDay ? "00:00" : time}:00+07:00`).toISOString();
+    const ends_at = multi ? new Date(`${endDate}T23:59:00+07:00`).toISOString() : null;
+    const { error } = await supabase().from("events").insert({ title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv });
     setBusy(false);
     if (error) return setErr(error.message);
-    setTitle(""); setNote(""); setPriv(false); setErr(null);
+    setTitle(""); setNote(""); setPriv(false); setMulti(false); setErr(null);
     onClose();
   }
 
@@ -168,11 +174,24 @@ function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; 
     <Sheet open={open} onClose={onClose} title="เพิ่มนัด">
       <form onSubmit={save} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm font-medium">ชื่อนัด<input className="field" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น หมอฟันน้องเพิร์ล" /></label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm font-medium">วันที่<input className="field" type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
-          <label className="flex flex-col gap-1 text-sm font-medium">เวลา<input className="field" type="time" disabled={allDay} value={time} onChange={(e) => setTime(e.target.value)} /></label>
+        <div className="flex gap-2">
+          <button type="button" className="chip flex-1" aria-pressed={!multi} onClick={() => setMulti(false)}>วันเดียว</button>
+          <button type="button" className="chip flex-1" aria-pressed={multi} onClick={() => { setMulti(true); if (endDate < date) setEndDate(date); }}>หลายวัน (เช่น ไปเที่ยว)</button>
         </div>
-        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />ทั้งวัน</label>
+        {multi ? (
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-sm font-medium">วันไป<input className="field" type="date" required value={date} onChange={(e) => { setDate(e.target.value); if (endDate < e.target.value) setEndDate(e.target.value); }} /></label>
+            <label className="flex flex-col gap-1 text-sm font-medium">วันกลับ<input className="field" type="date" required min={date} value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-sm font-medium">วันที่<input className="field" type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
+              <label className="flex flex-col gap-1 text-sm font-medium">เวลา<input className="field" type="time" disabled={allDay} value={time} onChange={(e) => setTime(e.target.value)} /></label>
+            </div>
+            <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />ทั้งวัน</label>
+          </>
+        )}
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-sm font-medium">ของใคร</legend>
           <div className="flex flex-wrap gap-2">
