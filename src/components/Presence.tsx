@@ -98,7 +98,10 @@ export function FamilyPresence({ me, size = 44 }: { me: string; size?: number })
   const { people } = useHousehold();
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [noAcc, setNoAcc] = useState<string | null>(null);
+  const { isParent } = useHousehold();
   const sel = members.find((m) => m.user_id === open);
+  const lone = noAcc ? people.get(noAcc) : null;
   const shown = people.list.slice(0, 5);
 
   return (
@@ -111,16 +114,24 @@ export function FamilyPresence({ me, size = 44 }: { me: string; size?: number })
           return m ? (
             <button
               key={p.key}
-              onClick={() => { setOpen(open === m.user_id ? null : m.user_id); setMsg(null); }}
+              onClick={() => { setOpen(open === m.user_id ? null : m.user_id); setNoAcc(null); setMsg(null); }}
               aria-label={`${p.name}${m.user_id === me ? " (คุณ)" : isOn ? " ออนไลน์อยู่" : ""}`}
               className={`relative ${i ? "-ml-2" : ""} ${isOn ? "hop" : ""}`}
               style={isOn ? { animationDelay: `${i * 0.3}s` } : undefined}
             >{face}</button>
           ) : (
-            <span key={p.key} className={`relative ${i ? "-ml-2" : ""}`} role="img" aria-label={p.name}>{face}</span>
+            <button key={p.key} onClick={() => { setNoAcc(noAcc === p.key ? null : p.key); setOpen(null); }} className={`relative ${i ? "-ml-2" : ""}`} aria-label={p.name}>{face}</button>
           );
         })}
       </div>
+      {lone && (
+        <div className="absolute top-full right-0 z-30 mt-2 w-60 rounded-2xl bg-white p-3 text-sm shadow-[0_8px_28px_rgba(74,59,54,.18)]">
+          <p className="font-semibold">{lone.name}</p>
+          <p className="mt-0.5 text-muted">{lone.kid ? `${lone.name}ยังไม่มีบัญชีในแอป${isParent ? " ถ้าลูกมีมือถือ ให้สมัครแล้วเลือก \"ลูก\" ใส่รหัสบ้านจากหน้าตั้งค่า" : ""}` : `${lone.name}ยังไม่ได้เข้าบ้าน ส่งลิงก์เชิญได้ที่หน้าตั้งค่า`}</p>
+          {lone.kid && <a href="/stars" className="btn-soft mt-2 flex w-full items-center justify-center">⭐ ดูสมุดดาวของ{lone.name}</a>}
+          {!lone.kid && <a href="/settings" className="btn-soft mt-2 flex w-full items-center justify-center">ไปหน้าเชิญ</a>}
+        </div>
+      )}
       {sel && (
         <div className="absolute top-full right-0 z-30 mt-2 w-60 rounded-2xl bg-white p-3 text-sm shadow-[0_8px_28px_rgba(74,59,54,.18)]">
           <p className="font-semibold">{people.get(sel.role).name}{sel.user_id === me && " (คุณ)"}</p>
