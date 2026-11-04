@@ -2,31 +2,39 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Sheet } from "./Sheet";
+import { useHousehold } from "./Household";
 
 const DEFAULTS: Record<string, string[]> = {
   home: ["history", "settle", "goals", "fixed", "list"],
   mine: ["cards", "history", "fixed", "list"],
 };
-const KEY = (scope: string) => `ban-rao:money-order:${scope}`;
 
-/** ลำดับกล่องในหน้าเงินแยกตามแท็บ (จำในเครื่องนี้) */
-export function useSectionOrder(scope: "home" | "mine") {
-  const [saved, setSaved] = useState<Record<string, string[]>>({});
+/**
+ * ค่าตั้งรายการ (string[]) ต่อแท็บ: เก็บบน server ตามบัญชี (members.ui_prefs)
+ * ค่าที่เคยจำไว้ในเครื่องจะถูกย้ายขึ้น server ครั้งแรกที่เปิด
+ */
+function usePrefList(name: "money-order" | "money-hidden", scope: "home" | "mine") {
+  const { uiPrefs, setUiPref } = useHousehold();
+  const key = `${name}:${scope}`;
+  const server = uiPrefs[key];
   useEffect(() => {
+    if (Array.isArray(server)) return;
     try {
-      const r: Record<string, string[]> = {};
-      for (const s of ["home", "mine"]) { const v = localStorage.getItem(KEY(s)); if (v) r[s] = JSON.parse(v); }
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSaved(r);
-    } catch { /* ไม่มี storage ก็ใช้ลำดับตั้งต้น */ }
-  }, []);
+      const v = localStorage.getItem(`ban-rao:${key}`);
+      if (v) setUiPref(key, JSON.parse(v));
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, Array.isArray(server)]);
+  const list = Array.isArray(server) ? (server as string[]) : [];
+  return [list, (next: string[]) => setUiPref(key, next)] as const;
+}
+
+/** ลำดับกล่องในหน้าเงินแยกตามแท็บ */
+export function useSectionOrder(scope: "home" | "mine") {
+  const [saved, set] = usePrefList("money-order", scope);
   const base = DEFAULTS[scope];
-  const mine = (saved[scope] ?? []).filter((k) => base.includes(k));
+  const mine = saved.filter((k) => base.includes(k));
   const ids = [...mine, ...base.filter((k) => !mine.includes(k))];
-  function set(next: string[]) {
-    setSaved((s) => ({ ...s, [scope]: next }));
-    try { localStorage.setItem(KEY(scope), JSON.stringify(next)); } catch { /* ignore */ }
-  }
   return {
     ids,
     move(id: string, dir: -1 | 1) {
@@ -42,26 +50,12 @@ export function useSectionOrder(scope: "home" | "mine") {
 
 type Order = ReturnType<typeof useSectionOrder>;
 
-const HKEY = (scope: string) => `ban-rao:money-hidden:${scope}`;
-/** กล่องที่ซ่อนไว้ (จำในเครื่องนี้ แยกตามแท็บ) */
+/** กล่องที่ซ่อนไว้ แยกตามแท็บ */
 export function useCollapsed(scope: "home" | "mine") {
-  const [all, setAll] = useState<Record<string, string[]>>({});
-  useEffect(() => {
-    try {
-      const r: Record<string, string[]> = {};
-      for (const s of ["home", "mine"]) { const v = localStorage.getItem(HKEY(s)); if (v) r[s] = JSON.parse(v); }
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAll(r);
-    } catch { /* ignore */ }
-  }, []);
-  const ids = all[scope] ?? [];
+  const [ids, set] = usePrefList("money-hidden", scope);
   return {
     has: (id: string) => ids.includes(id),
-    toggle(id: string) {
-      const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
-      setAll((a) => ({ ...a, [scope]: next }));
-      try { localStorage.setItem(HKEY(scope), JSON.stringify(next)); } catch { /* ignore */ }
-    },
+    toggle: (id: string) => set(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]),
   };
 }
 type Collapsed = ReturnType<typeof useCollapsed>;

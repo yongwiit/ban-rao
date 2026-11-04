@@ -34,6 +34,9 @@ type Ctx = {
   shows: (tab: TabKey) => boolean;
   tourDone: boolean;
   finishTour: () => void;
+  /** ค่าตั้งหน้าจอของฉัน (เก็บบน server ตามบัญชี) */
+  uiPrefs: Record<string, unknown>;
+  setUiPref: (key: string, value: unknown) => void;
   signOut: () => Promise<void>;
 };
 
@@ -47,7 +50,7 @@ export function useHousehold(): Ctx {
 
 export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean; tourDone: boolean } | null | undefined>(undefined);
+  const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean; tourDone: boolean; uiPrefs: Record<string, unknown> } | null | undefined>(undefined);
   const [people, setPeople] = useState<People>(() => makePeople(DEFAULT_PEOPLE));
 
   const loadPeople = useCallback(async (hid: string) => {
@@ -64,7 +67,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const loadMember = useCallback(async () => {
     if (!session) return;
     const db = supabase();
-    const { data: me } = await db.from("members").select("role, household_id, tour_done").eq("user_id", session.user.id).maybeSingle();
+    const { data: me } = await db.from("members").select("role, household_id, tour_done, ui_prefs").eq("user_id", session.user.id).maybeSingle();
     if (!me) {
       setMember(null);
       return;
@@ -80,6 +83,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         household: { ...hh, monthly_budget: Number(hh.monthly_budget), hidden_tabs: hh.hidden_tabs ?? [], hidden_categories: hh.hidden_categories ?? [] },
         partnerJoined: (count ?? 0) >= 2,
         tourDone: !!me.tour_done,
+        uiPrefs: (me.ui_prefs as Record<string, unknown> | null) ?? {},
       });
     }
   }, [session, loadPeople]);
@@ -121,6 +125,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
           setMember((m) => (m ? { ...m, tourDone: true } : m));
           try { localStorage.setItem(`tour-done-${session.user.id}`, "1"); } catch {}
           supabase().rpc("mark_tour_done").then(() => {});
+        },
+        uiPrefs: member.uiPrefs,
+        setUiPref: (key, value) => {
+          setMember((m) => (m ? { ...m, uiPrefs: { ...m.uiPrefs, [key]: value } } : m));
+          supabase().rpc("set_ui_pref", { p_key: key, p_value: value }).then(() => {});
         },
         signOut: async () => {
           await supabase().auth.signOut();
