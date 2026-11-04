@@ -48,6 +48,7 @@ function toDraft(r: SlipResult, role: "dad" | "mom"): ExpenseDraft {
 export default function SlipPage() {
   const role = useHousehold().role as Role;
   const [items, setItems] = useState<Item[]>([]);
+  const [zoom, setZoom] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { warmUpOcr(); }, []);
   const patch = (key: string, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
@@ -109,8 +110,13 @@ export default function SlipPage() {
           {open.map((it) => (
             <section key={it.key} className="card flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {it.preview && <img src={it.preview} alt="สลิปที่อัปโหลด" className="h-24 w-16 shrink-0 rounded-xl border border-line object-cover" />}
+                {it.preview && (
+                  <button onClick={() => setZoom(it.preview)} aria-label="ขยายดูสลิป" className="relative shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={it.preview} alt="สลิปที่อัปโหลด" className="h-24 w-16 rounded-xl border border-line object-cover" />
+                    <span className="absolute right-1 bottom-1 rounded-full bg-white/90 px-1 text-[10px]">🔍</span>
+                  </button>
+                )}
                 <div className="flex items-center gap-2 text-sm">
                   <Bunny size={36} happy={it.state === "ready"} />
                   {it.state === "reading" ? "กำลังอ่านสลิปให้นะ… (ครั้งแรกอาจใช้เวลาสักครู่)" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
@@ -127,6 +133,13 @@ export default function SlipPage() {
             </section>
           ))}
           {savedCount > 0 && <p className="text-center text-sm text-muted">บันทึกไปแล้ว {savedCount} ใบ</p>}
+          {zoom && (
+            <button onClick={() => setZoom(null)} aria-label="ปิดรูป" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-cocoa/80 p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={zoom} alt="สลิปขยาย" className="max-h-[82dvh] max-w-full rounded-2xl bg-white object-contain" />
+              <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold">แตะเพื่อปิด</span>
+            </button>
+          )}
         </>
       )}
     </div>

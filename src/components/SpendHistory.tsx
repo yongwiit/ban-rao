@@ -6,12 +6,12 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { ExpenseRow } from "@/lib/types";
 
-type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private">;
+type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
 const MONTHS = 6;
 const BAR_COLORS = ["#D9738F", "#5E8FC9", "#5FA37E", "#D9941F", "#9B7FD1", "#C9A27E", "#7A6A63"];
 
 /** กราฟแท่งยอดใช้ของบ้านย้อนหลัง 6 เดือน + แยกตามหมวดของเดือนที่เลือก */
-type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean };
+type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean; filter?: (e: Row) => boolean };
 
 export function SpendHistory({ householdId, ...view }: ViewProps & { householdId: string }) {
   const now = new Date();
@@ -19,11 +19,11 @@ export function SpendHistory({ householdId, ...view }: ViewProps & { householdId
   const from = monthRange(first.getFullYear(), first.getMonth()).start;
   const to = monthRange(now.getFullYear(), now.getMonth()).end;
   const rows = useLive<Row>("expenses", householdId, () =>
-    supabase().from("expenses").select("amount, spent_at, category, paid_from, private").gte("spent_at", from).lt("spent_at", to), [from]);
+    supabase().from("expenses").select("amount, spent_at, category, paid_from, private, created_by").gte("spent_at", from).lt("spent_at", to), [from]);
   return <SpendHistoryView rows={rows.rows} {...view} />;
 }
 
-export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn }: ViewProps & { rows: Row[] }) {
+export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, filter = isHouseholdSpend }: ViewProps & { rows: Row[] }) {
   const now = new Date();
   const months = Array.from({ length: MONTHS }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS - 1 - i), 1);
@@ -33,7 +33,7 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn }: V
   const totals: Record<string, number> = {};
   const byCat: Record<string, Record<string, number>> = {};
   for (const e of rows) {
-    if (!isHouseholdSpend(e)) continue;
+    if (!filter(e)) continue;
     const k = dayKey(e.spent_at).slice(0, 7);
     totals[k] = (totals[k] ?? 0) + Number(e.amount);
     (byCat[k] ??= {})[e.category] = (byCat[k][e.category] ?? 0) + Number(e.amount);

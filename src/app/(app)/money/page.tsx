@@ -16,7 +16,10 @@ import { useLive } from "@/lib/useLive";
 import type { BillRow, ExpenseRow, SettlementRow } from "@/lib/types";
 
 export default function MoneyPage() {
-  const { household, reloadHousehold, people } = useHousehold();
+  const { household, reloadHousehold, people, userId } = useHousehold();
+  const [scope, setScope] = useState<"home" | "mine">("home");
+  const mineOnly = (e: Pick<ExpenseRow, "created_by" | "paid_from" | "private">) => e.created_by === userId && (e.paid_from === "personal" || e.private);
+  const inScope = scope === "home" ? isHouseholdSpend : mineOnly;
   const hid = household.id;
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
@@ -32,7 +35,7 @@ export default function MoneyPage() {
   const settlements = useLive<SettlementRow>("settlements", hid, () => supabase().from("settlements").select("*"));
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").order("created_at"));
 
-  const shared = month.rows.filter(isHouseholdSpend);
+  const shared = month.rows.filter(inScope);
   const total = shared.reduce((s, e) => s + Number(e.amount), 0);
   const budget = household.monthly_budget;
   const owe = momOwesDad({
@@ -68,25 +71,32 @@ export default function MoneyPage() {
   return (
     <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between">
-        <h1 className="font-display text-[26px] font-bold">เงินบ้านเรา</h1>
+        <h1 className="font-display text-[26px] font-bold">{scope === "home" ? "เงินบ้านเรา" : "เงินของฉัน"}</h1>
         <Link href="/slip" className="btn-dark min-h-11 px-4 text-sm"><UploadIcon />อัปโหลดสลิป</Link>
       </header>
 
-      <section className="card flex flex-col gap-2 bg-peach">
+      <div className="grid grid-cols-2 gap-1 rounded-full bg-white p-1" role="tablist" aria-label="ดูเงินของ">
+        {([["home", "🏠 ของบ้าน"], ["mine", "🙋 ของฉัน"]] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={scope === k} onClick={() => setScope(k)} className={`min-h-10 rounded-full text-sm font-semibold ${scope === k ? "bg-cocoa text-cream" : "text-muted"}`}>{label}</button>
+        ))}
+      </div>
+
+      <section className={`card flex flex-col gap-2 ${scope === "home" ? "bg-peach" : "bg-lavender"}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button aria-label="เดือนก่อน" onClick={() => shift(-1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon dir="left" size={16} /></button>
             <span className="text-sm">{thaiDate(new Date(ym.y, ym.m, 15), { month: "long", year: "numeric" })} ใช้ไป</span>
             <button aria-label="เดือนถัดไป" onClick={() => shift(1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon size={16} /></button>
           </div>
-          <button onClick={toggleBudget} aria-pressed={household.budget_enabled} className="flex h-8 items-center gap-1.5 rounded-xl bg-white px-2.5 text-[13px]">
+          {scope === "home" && <button onClick={toggleBudget} aria-pressed={household.budget_enabled} className="flex h-8 items-center gap-1.5 rounded-xl bg-white px-2.5 text-[13px]">
             <span className={`relative h-[18px] w-[30px] rounded-full ${household.budget_enabled ? "bg-rose" : "bg-[#C9B8AE]"}`}>
               <span className={`absolute top-0.5 size-3.5 rounded-full bg-white ${household.budget_enabled ? "left-[14px]" : "left-0.5"}`} />
             </span>ใช้งบ
-          </button>
+          </button>}
         </div>
         <span className="font-display text-[30px] font-bold">{baht(total)} <span className="text-base font-medium">บาท</span></span>
-        {household.budget_enabled && (
+        {scope === "mine" && <span className="text-xs text-muted">รายการที่คุณจดเป็น &quot;จ่ายส่วนตัว&quot; หรือ &quot;เห็นคนเดียว&quot; · ไม่นับรวมในยอดบ้าน</span>}
+        {scope === "home" && household.budget_enabled && (
           <button onClick={() => setBudgetOpen(true)} className="flex flex-col gap-1 text-left">
             <span className="h-2.5 overflow-hidden rounded-full bg-white"><span className="block h-2.5 bg-rose" style={{ width: `${Math.min(100, budget ? (total / budget) * 100 : 0)}%` }} /></span>
             <span className="text-xs">
@@ -97,9 +107,9 @@ export default function MoneyPage() {
         )}
       </section>
 
-      <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={household.budget_enabled} />
+      <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} />
 
-      <section className="card flex items-center gap-3">
+      {scope === "home" && <><section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
         <div className="flex flex-1 flex-col">
           <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งครึ่ง)</span>
@@ -127,20 +137,20 @@ export default function MoneyPage() {
             <span>ต้องเก็บเดือนละ</span><span className="font-display text-lg">{baht(setAside)} บาท</span>
           </div>
         )}
-      </section>
+      </section></>}
 
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display text-[17px] font-semibold">รายการเดือนนี้</h2>
-          <button onClick={() => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category: "home", paid_from: "pot", private: false, note: "" })} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
+          <button onClick={() => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category: scope === "home" ? "home" : "other", paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" })} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
         </div>
         {month.rows.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
-        {month.rows.map((e) => (
+        {month.rows.filter((e) => scope === "home" || mineOnly(e)).map((e) => (
           <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{categoryLabel(e.category).slice(0, 2)}</span>}</span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-semibold">{e.merchant || categoryLabel(e.category)}</span>
-              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? " · จากสลิป" : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
+              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} {thaiTime(e.spent_at)} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? ` · สลิป${e.bank ? ` ${e.bank}` : ""} …${e.slip_ref.slice(-4)}` : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
             </span>
             {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
             <span className="font-semibold">{baht(Number(e.amount))}</span>
