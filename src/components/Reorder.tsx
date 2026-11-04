@@ -42,14 +42,58 @@ export function useSectionOrder(scope: "home" | "mine") {
 
 type Order = ReturnType<typeof useSectionOrder>;
 
+const HKEY = (scope: string) => `ban-rao:money-hidden:${scope}`;
+/** กล่องที่ซ่อนไว้ (จำในเครื่องนี้ แยกตามแท็บ) */
+export function useCollapsed(scope: "home" | "mine") {
+  const [all, setAll] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    try {
+      const r: Record<string, string[]> = {};
+      for (const s of ["home", "mine"]) { const v = localStorage.getItem(HKEY(s)); if (v) r[s] = JSON.parse(v); }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAll(r);
+    } catch { /* ignore */ }
+  }, []);
+  const ids = all[scope] ?? [];
+  return {
+    has: (id: string) => ids.includes(id),
+    toggle(id: string) {
+      const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+      setAll((a) => ({ ...a, [scope]: next }));
+      try { localStorage.setItem(HKEY(scope), JSON.stringify(next)); } catch { /* ignore */ }
+    },
+  };
+}
+type Collapsed = ReturnType<typeof useCollapsed>;
+type Section = { label: string; node: React.ReactNode; summary?: string; tone?: "ok" | "due" };
+
 /** กดค้างที่กล่องไหนก็ได้ → เปิดหน้าเลื่อนกล่องขึ้น/ลง */
-export function Reorderable({ order, sections }: { order: Order; sections: Record<string, { label: string; node: React.ReactNode } | null> }) {
+export function Reorderable({ order, sections, collapsed }: { order: Order; sections: Record<string, Section | null>; collapsed: Collapsed }) {
   const [open, setOpen] = useState<string | null>(null);
   const ids = order.ids.filter((k) => sections[k]);
   return (
     <>
-      {ids.map((k) => <LongPress key={k} onLongPress={() => setOpen(k)}>{sections[k]!.node}</LongPress>)}
-      <p className="text-center text-xs text-muted">กดค้างที่กล่องเพื่อเลื่อนขึ้นลง</p>
+      {ids.map((k) => {
+        const sec = sections[k]!;
+        return (
+          <LongPress key={k} onLongPress={() => setOpen(k)}>
+            {collapsed.has(k) ? (
+              <button type="button" onClick={() => collapsed.toggle(k)} aria-expanded={false} aria-label={`แสดง${sec.label}`}
+                className="card flex w-full items-center gap-2 py-3 text-left">
+                <span className="flex-1 font-display text-[15px] font-semibold">{sec.label}</span>
+                <span className={`text-sm ${sec.tone === "due" ? "font-semibold text-rose" : sec.tone === "ok" ? "text-[#3F8A5F]" : "font-semibold"}`}>{sec.summary ?? "แตะเพื่อแสดง"}</span>
+                <span className="text-muted" aria-hidden>▾</span>
+              </button>
+            ) : (
+              <div className="flex flex-col">
+                {sec.node}
+                <button type="button" onClick={() => collapsed.toggle(k)} aria-expanded aria-label={`ซ่อน${sec.label}`} className="-mt-1 min-h-8 self-end px-3 text-xs text-muted">ซ่อนกล่องนี้ ▴</button>
+              </div>
+            )}
+          </LongPress>
+        );
+      })}
+      <p className="text-center text-xs text-muted">กดค้างที่กล่องเพื่อเลื่อนขึ้นลง · กด &quot;ซ่อนกล่องนี้&quot; เพื่อย่อเหลือแค่ยอด</p>
       <Sheet open={!!open} onClose={() => setOpen(null)} title="เลื่อนกล่อง">
         <div className="flex flex-col gap-2">
           {ids.map((k, i) => (

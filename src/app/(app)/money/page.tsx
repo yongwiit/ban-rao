@@ -7,9 +7,9 @@ import { Goals } from "@/components/Goals";
 import { CreditCards, useCards } from "@/components/CreditCards";
 import { BillRequests } from "@/components/BillRequests";
 import { FixedCosts } from "@/components/FixedCosts";
-import { Reorderable, useSectionOrder } from "@/components/Reorder";
+import { Reorderable, useCollapsed, useSectionOrder } from "@/components/Reorder";
 import { CatIcon, useCategories } from "@/components/Categories";
-import { activeSub, chargeInMonth, isSub } from "@/lib/cards";
+import { activeSub, cardBillsInMonth, chargeInMonth, isSub } from "@/lib/cards";
 import { MonthCard } from "@/components/Income";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
@@ -71,6 +71,8 @@ export default function MoneyPage() {
   const mySubs = scope === "mine" ? cards.charges.filter((c) => activeSub(c, today)) : [];
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const order = useSectionOrder(scope);
+  const collapsed = useCollapsed(scope);
+  const ticks = useLive<{ card_id: string; ym: string }>("card_bill_paid", scope === "mine" ? hid : undefined, () => supabase().from("card_bill_paid").select("card_id,ym"));
 
   async function toggleBudget() {
     await supabase().from("households").update({ budget_enabled: !household.budget_enabled }).eq("id", hid);
@@ -117,9 +119,21 @@ export default function MoneyPage() {
     }
   }
 
-  const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
-    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} extra={cardRows} weight={scope === "mine" ? mineWeight : undefined} note={scope === "mine" ? "นับตามวันที่ใช้/รูดบัตร (ผ่อนนับเดือนละงวด) รวมส่วนของฉันในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน · การ์ดด้านบนนับบิลบัตรตอนจ่าย ตัวเลขจึงอาจไม่เท่ากัน" : undefined} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
-    settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
+  // ยอดสรุปตอนซ่อนกล่อง: กล่องค่าใช้จ่าย = ยอดรวม · กล่องที่ต้องจ่าย = ยอดค้าง
+  const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
+  const owed = (v: number) => (v > 0 ? { summary: `ค้าง ${baht(v)} บาท`, tone: "due" as const } : { summary: "ไม่มียอดค้างชำระ", tone: "ok" as const });
+  const histTotal = scope === "mine"
+    ? month.rows.reduce((s, e) => s + Number(e.amount) * mineWeight(e), 0) + cardRows.filter((r) => dayKey(r.spent_at).slice(0, 7) === ymKey).reduce((s, r) => s + r.amount, 0)
+    : total;
+  const myCards = cards.cards.filter((c) => c.owner === role || c.created_by === userId);
+  const cardDue = cardBillsInMonth(myCards, cards.charges, ym.y, ym.m).filter((b) => !ticks.rows.some((t) => t.card_id === b.card.id && t.ym === ymKey)).reduce((s, b) => s + b.amount, 0);
+  const recorded = (id: string) => month.rows.some((e) => e.bill_id === id);
+  const fixedDue = activeBills.filter((b) => b.period === "monthly" && !recorded(b.id)).reduce((s, b) => s + Number(b.amount), 0)
+    + shareBills.filter((b) => !recorded(b.id)).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0);
+
+  const sections: Record<string, { label: string; node: React.ReactNode; summary?: string; tone?: "ok" | "due" } | null> = {
+    history: { label: "📊 ย้อนหลัง 6 เดือน", summary: `เดือนนี้ใช้ ${baht(histTotal)} บาท`, node: <SpendHistory householdId={hid} extra={cardRows} weight={scope === "mine" ? mineWeight : undefined} note={scope === "mine" ? "นับตามวันที่ใช้/รูดบัตร (ผ่อนนับเดือนละงวด) รวมส่วนของฉันในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน · การ์ดด้านบนนับบิลบัตรตอนจ่าย ตัวเลขจึงอาจไม่เท่ากัน" : undefined} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
+    settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", ...(owe === 0 ? owed(0) : { summary: `${owe > 0 ? people.get("mom").name : people.get("dad").name}ค้างโอน ${baht(Math.abs(owe))} บาท`, tone: "due" as const }), node: (
       <section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
         <div className="flex flex-1 flex-col">
@@ -131,10 +145,10 @@ export default function MoneyPage() {
         {owe !== 0 && <button onClick={() => setSettleOpen(true)} className="btn-soft min-h-10 px-3.5 text-[13px]">โอน / เคลียร์</button>}
       </section>
     ) },
-    cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", node: <CreditCards /> },
+    cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", ...owed(cardDue), node: <CreditCards /> },
     goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
-    fixed: { label: "📌 ค่าใช้จ่ายประจำ", node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
-    list: { label: "🧾 รายการเดือนนี้", node: (
+    fixed: { label: "📌 ค่าใช้จ่ายประจำ", ...owed(fixedDue), node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
+    list: { label: "🧾 รายการเดือนนี้", summary: `${list.length} รายการ · ${baht(total)} บาท`, node: (
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display text-[17px] font-semibold">รายการเดือนนี้</h2>
@@ -192,7 +206,7 @@ export default function MoneyPage() {
         </div>
       } />
 
-      <Reorderable order={order} sections={sections} />
+      <Reorderable order={order} sections={sections} collapsed={collapsed} />
 
       <Sheet open={settleOpen} onClose={() => setSettleOpen(false)} title="เคลียร์เงินกัน">
         {(() => {
