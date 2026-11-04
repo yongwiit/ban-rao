@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import type { Role } from "@/lib/family";
 import { PEOPLE } from "@/lib/family";
 import { Bear, Bunny, Family } from "./Mascots";
+import { Credit } from "./Credit";
 
 export type HouseholdRow = {
   id: string;
@@ -154,6 +155,7 @@ function Login() {
           {mode === "in" ? "ยังไม่มีบัญชี? สมัครใช้งาน" : "มีบัญชีแล้ว? เข้าสู่ระบบ"}
         </button>
       </form>
+      <Credit />
     </main>
   );
 }

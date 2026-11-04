@@ -6,6 +6,7 @@ import { InviteButtons } from "@/components/InviteButtons";
 import { LineLink } from "@/components/LineLink";
 import { CalendarLink } from "@/components/CalendarLink";
 import { PushSetup } from "@/components/PushSetup";
+import { Credit } from "@/components/Credit";
 import { GoogleImport } from "@/components/GoogleImport";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
@@ -50,6 +51,7 @@ export default function SettingsPage() {
       </Link>
 
       <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ</button>
+      <Credit className="pb-4" />
     </div>
   );
 }

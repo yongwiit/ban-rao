@@ -59,7 +59,7 @@ export default function TodayPage() {
       <header className="flex items-start justify-between">
         <div>
           <p className="text-sm text-muted">{thaiDate(now, { weekday: "long", day: "numeric", month: "short", year: "2-digit" })}</p>
-          <h1 className="font-display text-[28px] font-bold">{greeting(Number(thaiTime(now).slice(0, 2)))}</h1>
+          <h1 className="font-display text-[26px] font-bold whitespace-nowrap">{greeting(Number(thaiTime(now).slice(0, 2)))}</h1>
         </div>
         <div className="flex items-center gap-2">
           <Family size={44} />
