@@ -6,7 +6,15 @@ import webpush from "npm:web-push@3.6.7";
 import { addDays, fireOn, occursOn, startOn, thDay, thHm, type RecurEvent } from "./recur.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-const NAMES: Record<string, string> = { dad: "พ่ออั้ม", mom: "แม่แพ็ค", pearl: "น้องเพิร์ล", all: "ทั้งบ้าน" };
+const nameCache = new Map<string, Record<string, string>>();
+/** ชื่อคนในบ้าน (แก้ได้ในแอป) */
+async function names(hid: string): Promise<Record<string, string>> {
+  if (!nameCache.has(hid)) {
+    const { data } = await db.from("household_people").select("key, name").eq("household_id", hid);
+    nameCache.set(hid, { all: "ทั้งบ้าน", ...Object.fromEntries((data ?? []).map((r) => [r.key, r.name])) });
+  }
+  return nameCache.get(hid)!;
+}
 const WINDOW_MIN = 15;
 
 type Ev = RecurEvent & {
@@ -73,6 +81,7 @@ async function onChange(id: string, kind: "new" | "change") {
   const actor = e.updated_by ?? e.created_by;
   const users = (await recipients(e)).filter((u) => u !== actor);
   const { data: who } = await db.from("members").select("role").eq("user_id", actor).maybeSingle();
+  const NAMES = await names(e.household_id);
   const by = who ? NAMES[who.role] : "";
   const sent = await send(users, "notify_new", {
     title: kind === "new" ? `📅 นัดใหม่: ${e.title}` : `✏️ แก้นัด: ${e.title}`,
@@ -98,6 +107,7 @@ async function onCron() {
       const fire = fireOn(e, day);
       if (!fire || fire.getTime() > now || fire.getTime() <= now - WINDOW_MIN * 60_000) continue;
       if (!(await claim(e.id, "remind", fire.toISOString()))) continue;
+      const NAMES = await names(e.household_id);
       const mins = e.remind_before ?? 0;
       const lead = mins === 0 ? (e.all_day ? "วันนี้" : "ถึงเวลาแล้ว") : mins < 60 ? `อีก ${mins} นาที` : mins < 1440 ? `อีก ${mins / 60} ชั่วโมง` : mins < 10080 ? `อีก ${mins / 1440} วัน` : "อีก 1 สัปดาห์";
       sent += await send(await recipients(e), "notify_remind", {
@@ -156,7 +166,7 @@ async function onHeart(id: string) {
   const { data: h } = await db.from("hearts").select("id, from_user, to_user, household_id, created_at").eq("id", id).maybeSingle();
   if (!h || Date.now() - new Date(h.created_at).getTime() > 5 * 60_000) return { sent: 0 };
   const { data: from } = await db.from("members").select("role").eq("user_id", h.from_user).eq("household_id", h.household_id).maybeSingle();
-  const name = from ? NAMES[from.role] ?? "คนในบ้าน" : "คนในบ้าน";
+  const name = from ? (await names(h.household_id))[from.role] ?? "คนในบ้าน" : "คนในบ้าน";
   const sent = await send([h.to_user], "notify_new", { title: `💗 ${name}ส่งหัวใจให้`, body: "คิดถึงนะ", url: "/", tag: `heart-${h.from_user}` });
   return { sent };
 }
@@ -176,6 +186,7 @@ async function onTest(endpoint: string) {
 }
 
 Deno.serve(async (req) => {
+  nameCache.clear();
   const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info" };
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {

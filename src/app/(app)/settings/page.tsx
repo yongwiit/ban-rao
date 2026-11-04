@@ -8,13 +8,13 @@ import { CalendarLink } from "@/components/CalendarLink";
 import { PushSetup } from "@/components/PushSetup";
 import { Credit } from "@/components/Credit";
 import { SoundToggle } from "@/components/SoundToggle";
+import { FamilyEditor } from "@/components/FamilyEditor";
 import { GoogleImport } from "@/components/GoogleImport";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
-import { PEOPLE } from "@/lib/family";
 import { baht } from "@/lib/format";
 
 export default function SettingsPage() {
-  const { household, role, partnerJoined, signOut } = useHousehold();
+  const { household, role, partnerJoined, signOut, people } = useHousehold();
 
   return (
     <div className="flex flex-col gap-4">
@@ -25,9 +25,10 @@ export default function SettingsPage() {
 
       <section className="card flex flex-col gap-1 text-sm">
         <h2 className="font-display text-[17px] font-semibold">{household.name || "บ้านเรา"}</h2>
-        <p className="text-muted">คุณคือ {PEOPLE[role].name} · {partnerJoined ? "อยู่ครบทั้งสองคนแล้ว" : "ยังรออีกคนเข้าบ้าน"}</p>
+        <p className="text-muted">คุณคือ {people.get(role).name} · {partnerJoined ? "พ่อแม่อยู่ครบแล้ว" : "ยังรออีกคนเข้าบ้าน"}</p>
       </section>
 
+      <FamilyEditor />
       <PushSetup />
       <SoundToggle />
 

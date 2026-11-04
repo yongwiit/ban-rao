@@ -7,7 +7,7 @@ import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear } from "@/components/Mascots";
 import { ChatIcon, ChevronIcon, EditIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
-import { PEOPLE, type Who } from "@/lib/family";
+import { type Who } from "@/lib/family";
 import { dayKey, monthRange, thaiDate } from "@/lib/format";
 
 /** HH:mm ตามเวลาไทย สำหรับช่อง input type=time */
@@ -21,10 +21,9 @@ import { useLive } from "@/lib/useLive";
 import type { CommentRow, EventRow } from "@/lib/types";
 
 const WEEK = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
-const WHO: Who[] = ["dad", "mom", "pearl", "all"];
 
 export default function CalendarPage() {
-  const { household, userId } = useHousehold();
+  const { household, userId, people } = useHousehold();
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [sel, setSel] = useState(dayKey(now));
@@ -73,9 +72,9 @@ export default function CalendarPage() {
       </header>
 
       <div className="flex flex-wrap gap-2">
-        {WHO.map((w) => (
+        {[...people.list.map((p) => p.key), "all"].map((w) => (
           <span key={w} className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1 text-sm">
-            <span className="size-2.5 rounded-full" style={{ background: PEOPLE[w].color }} />{PEOPLE[w].name}
+            <span className="size-2.5 rounded-full" style={{ background: people.get(w).color }} />{people.get(w).name}
           </span>
         ))}
       </div>
@@ -105,7 +104,7 @@ export default function CalendarPage() {
                   <span
                     key={`${g.e.id}-${g.s}`}
                     aria-hidden
-                    style={{ gridColumn: `${g.s + 1} / ${g.t + 2}`, gridRow: g.lane + 2, background: PEOPLE[g.e.who].soft, color: "#4A3B36", borderLeft: g.head ? `3px solid ${PEOPLE[g.e.who].color}` : undefined }}
+                    style={{ gridColumn: `${g.s + 1} / ${g.t + 2}`, gridRow: g.lane + 2, background: people.get(g.e.who).soft, color: "#4A3B36", borderLeft: g.head ? `3px solid ${people.get(g.e.who).color}` : undefined }}
                     className={`pointer-events-none z-10 mx-0.5 mb-px truncate px-1 text-[10px] leading-4 ${g.head ? "rounded-l-md" : "-ml-px rounded-l-none"} ${g.tail ? "rounded-r-md" : "-mr-px rounded-r-none"}`}
                   >
                     {g.e.title}
@@ -139,6 +138,7 @@ export default function CalendarPage() {
 }
 
 function EventCard({ e, day, mine, open, onToggle, onEdit, householdId }: { e: EventRow; day: string; mine: boolean; open: boolean; onToggle: () => void; onEdit: () => void; householdId: string }) {
+  const { people } = useHousehold();
   const comments = useLive<CommentRow>("event_comments", householdId, () =>
     supabase().from("event_comments").select("*").eq("event_id", e.id).order("created_at"), [e.id]);
   const [text, setText] = useState("");
@@ -155,10 +155,10 @@ function EventCard({ e, day, mine, open, onToggle, onEdit, householdId }: { e: E
   return (
     <div className="card flex flex-col gap-2 px-4 py-3">
       <button onClick={onToggle} aria-expanded={open} className="flex items-center gap-3 text-left">
-        <span className="w-1.5 self-stretch rounded-full" style={{ background: PEOPLE[e.who].color }} />
+        <span className="w-1.5 self-stretch rounded-full" style={{ background: people.get(e.who).color }} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-center gap-1.5 font-semibold">{e.title}{e.private && <LockIcon className="text-muted" />}</span>
-          <span className="text-sm text-muted">{eventWhen(e, day)} · {PEOPLE[e.who].name}{e.private ? " · เห็นคนเดียว" : ""}{e.remind_before != null ? ` · 🔔 ${remindLabel(e)}` : ""}</span>
+          <span className="text-sm text-muted">{eventWhen(e, day)} · {people.get(e.who).name}{e.private ? " · เห็นคนเดียว" : ""}{e.remind_before != null ? ` · 🔔 ${remindLabel(e)}` : ""}</span>
         </span>
         {comments.rows.length > 0 && <span className="flex items-center gap-1 text-xs text-muted"><ChatIcon />{comments.rows.length}</span>}
       </button>
@@ -182,6 +182,7 @@ function EventCard({ e, day, mine, open, onToggle, onEdit, householdId }: { e: E
 }
 
 function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean; onClose: () => void; day: string; editing?: EventRow; mine?: boolean }) {
+  const { people } = useHousehold();
   const multiInit = editing ? isMultiDay(editing) : false;
   const [title, setTitle] = useState(editing?.title ?? "");
   const [date, setDate] = useState(editing ? dayKey(editing.starts_at) : day);
@@ -249,7 +250,7 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-sm font-medium">ของใคร</legend>
           <div className="flex flex-wrap gap-2">
-            {WHO.map((w) => <button type="button" key={w} className="chip" aria-pressed={who === w} onClick={() => setWho(w)}>{PEOPLE[w].name}</button>)}
+            {[...people.list.map((p) => p.key), "all"].map((w) => <button type="button" key={w} className="chip" aria-pressed={who === w} onClick={() => setWho(w)}>{people.get(w).name}</button>)}
           </div>
         </fieldset>
         <label className="flex flex-col gap-1 text-sm font-medium">แจ้งเตือน
@@ -258,7 +259,7 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
               <option key={String(o.value)} value={o.value === null ? "off" : String(o.value)}>{allDay || multi ? o.allDay : o.label}</option>
             ))}
           </select>
-          <span className="text-xs font-normal text-muted">{priv ? "นัดเห็นคนเดียว เตือนเฉพาะคุณ" : who === "dad" || who === "mom" ? `เตือนเฉพาะ${PEOPLE[who].name}` : "เตือนทุกคนในบ้าน"}</span>
+          <span className="text-xs font-normal text-muted">{priv ? "นัดเห็นคนเดียว เตือนเฉพาะคุณ" : who === "dad" || who === "mom" ? `เตือนเฉพาะ${people.get(who).name}` : "เตือนทุกคนในบ้าน"}</span>
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">โน้ต<input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ไม่ใส่ก็ได้" /></label>
         {mine && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} /><LockIcon />เห็นคนเดียว (เช่น เซอร์ไพรส์ วันครบรอบ)</label>}

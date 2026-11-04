@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, PAID_FROM, type Category, type PaidFrom } from "@/lib/family";
+import { CATEGORIES, PAID_FROM_KEYS, paidFromLabel, type Category, type PaidFrom } from "@/lib/family";
 import { useHousehold } from "./Household";
 import { useLive } from "@/lib/useLive";
 import type { CategoryRow } from "@/lib/types";
@@ -39,7 +39,7 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
   const [d, setD] = useState<ExpenseDraft>(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const { household } = useHousehold();
+  const { household, people } = useHousehold();
   const custom = useLive<CategoryRow>("expense_categories", household.id, () =>
     supabase().from("expense_categories").select("id, name").order("created_at"));
   const [newCat, setNewCat] = useState<string | null>(null);
@@ -116,8 +116,8 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายจาก</legend>
         <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(PAID_FROM) as PaidFrom[]).map((p) => (
-            <button type="button" key={p} className="chip" aria-pressed={d.paid_from === p} onClick={() => set("paid_from", p)}>{PAID_FROM[p]}</button>
+          {PAID_FROM_KEYS.map((p) => (
+            <button type="button" key={p} className="chip" aria-pressed={d.paid_from === p} onClick={() => set("paid_from", p)}>{paidFromLabel(p, people)}</button>
           ))}
         </div>
       </fieldset>

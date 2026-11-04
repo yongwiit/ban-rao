@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useHousehold } from "@/components/Household";
-import { PEOPLE, type Who } from "@/lib/family";
+import { type Who } from "@/lib/family";
 import { thaiDate, thaiTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/config";
 import type { ImportedEvent } from "@/lib/icsImport";
 
-const WHO: Who[] = ["dad", "mom", "pearl", "all"];
 type Imp = { url: string; who: Who; private: boolean; last_synced_at: string | null; last_count: number | null; last_error: string | null };
 
 export function GoogleImport() {
-  const { role, userId } = useHousehold();
+  const { role, userId, people } = useHousehold();
   const [imp, setImp] = useState<Imp | null>(null);
   const [url, setUrl] = useState("");
   const [who, setWho] = useState<Who>(role);
@@ -104,7 +103,7 @@ export function GoogleImport() {
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1 font-medium">นัดจาก Google เป็นของใคร</legend>
         <div className="flex flex-wrap gap-2">
-          {WHO.map((w) => <button type="button" key={w} className="chip" aria-pressed={who === w} onClick={() => setWho(w)}>{PEOPLE[w].name}</button>)}
+          {[...people.list.map((p) => p.key), "all"].map((w) => <button type="button" key={w} className="chip" aria-pressed={who === w} onClick={() => setWho(w)}>{people.get(w).name}</button>)}
         </div>
       </fieldset>
       <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} />เห็นคนเดียว</label>
@@ -118,7 +117,7 @@ export function GoogleImport() {
           <input type="file" accept=".ics,text/calendar" className="sr-only" onChange={(e) => onFile(e.target.files?.[0])} />
         </label>
         {file && file.length > 0 && (
-          <button className="btn-dark" disabled={busy} onClick={saveFile}>นำเข้า {file.length} นัดจากไฟล์ (เป็นของ{PEOPLE[who].name})</button>
+          <button className="btn-dark" disabled={busy} onClick={saveFile}>นำเข้า {file.length} นัดจากไฟล์ (เป็นของ{people.get(who).name})</button>
         )}
       </div>
       {msg && <p role="status" className="text-sm">{msg}</p>}

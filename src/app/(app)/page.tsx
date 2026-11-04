@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useHousehold } from "@/components/Household";
-import { Chick } from "@/components/Mascots";
+import { Mascot } from "@/components/Mascots";
 import { FamilyPresence } from "@/components/Presence";
 import { GearIcon, PlusIcon } from "@/components/Icons";
-import { PEOPLE } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { daysUntil, nextDue } from "@/lib/bills";
 import { supabase } from "@/lib/supabase";
@@ -23,7 +22,7 @@ function greeting(h: number) {
 }
 
 export default function TodayPage() {
-  const { household, userId } = useHousehold();
+  const { household, userId, people } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -51,7 +50,7 @@ export default function TodayPage() {
     [bills.rows],
   );
   const todays = events.rows.filter((e) => occursOn(e, today));
-  const pearlEvent = todays.find((e) => e.who === "pearl");
+  const kidEvent = todays.find((e) => people.get(e.who).kid);
   const budget = household.monthly_budget;
   const pct = budget > 0 ? Math.min(100, Math.round((monthTotal / budget) * 100)) : 0;
 
@@ -63,16 +62,16 @@ export default function TodayPage() {
           <h1 className="font-display text-[26px] font-bold whitespace-nowrap">{greeting(Number(thaiTime(now).slice(0, 2)))}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <FamilyPresence me={userId} size={40} />
+          <FamilyPresence me={userId} size={people.list.length > 3 ? 34 : 40} />
           <Link href="/settings" aria-label="ตั้งค่า" className="flex size-11 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(74,59,54,.06)]"><GearIcon size={20} /></Link>
         </div>
       </header>
 
-      {pearlEvent && (
+      {kidEvent && (
         <div className="flex items-center gap-3 rounded-[20px] bg-white px-4 py-2.5 shadow-[0_4px_14px_rgba(74,59,54,.06)]">
-          <Chick size={36} />
+          <Mascot kind={people.get(kidEvent.who).mascot} size={36} />
           <p className="text-sm">
-            วันนี้{PEOPLE.pearl.name}มี{pearlEvent.title} {pearlEvent.all_day ? "" : `ตอน ${thaiTime(pearlEvent.starts_at)} `}อย่าลืมน้า
+            วันนี้{people.get(kidEvent.who).name}มี{kidEvent.title} {kidEvent.all_day ? "" : `ตอน ${thaiTime(kidEvent.starts_at)} `}อย่าลืมน้า
           </p>
         </div>
       )}
@@ -85,10 +84,10 @@ export default function TodayPage() {
         {todays.length === 0 && <p className="text-sm text-muted">วันนี้ว่าง พักผ่อนได้เลย</p>}
         {todays.map((e) => (
           <div key={e.id} className="flex items-center gap-3">
-            <span className="h-9 w-1.5 rounded-full" style={{ background: PEOPLE[e.who].color }} />
+            <span className="h-9 w-1.5 rounded-full" style={{ background: people.get(e.who).color }} />
             <div className="flex flex-col">
               <span className="font-semibold">{e.title}</span>
-              <span className="text-sm text-muted">{eventWhen(e, today)} · {PEOPLE[e.who].name}</span>
+              <span className="text-sm text-muted">{eventWhen(e, today)} · {people.get(e.who).name}</span>
             </div>
           </div>
         ))}

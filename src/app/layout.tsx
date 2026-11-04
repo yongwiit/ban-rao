@@ -7,7 +7,7 @@ const noto = Noto_Sans_Thai({ variable: "--font-noto-thai", weight: ["400", "500
 
 export const metadata: Metadata = {
   title: "บ้านเรา",
-  description: "ปฏิทิน ซื้อของ และเงินของบ้าน สำหรับพ่ออั้ม แม่แพ็ค และน้องเพิร์ล",
+  description: "ปฏิทิน ซื้อของ และเงินของบ้าน สำหรับทุกคนในครอบครัว",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "บ้านเรา", statusBarStyle: "default" },
   icons: { icon: "/icon.svg", apple: "/apple-icon.png" },

@@ -2,9 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import { PEOPLE } from "@/lib/family";
 import type { Role } from "@/lib/family";
-import { Bear, Bunny, Chick } from "./Mascots";
+import { Mascot } from "./Mascots";
+import { useHousehold } from "./Household";
 import { play } from "@/lib/sfx";
 
 export type MemberInfo = { user_id: string; role: Role; last_seen_at: string | null };
@@ -63,7 +63,8 @@ export function PresenceProvider({ userId, role, householdId, children }: { user
     return error ? "ส่งถี่ไปนิด รอสักครู่แล้วส่งใหม่นะ" : null;
   }, [householdId, userId]);
 
-  const fromName = (id: string) => { const m = members.find((x) => x.user_id === id); return m ? PEOPLE[m.role].name : "คนในบ้าน"; };
+  const { people } = useHousehold();
+  const fromName = (id: string) => { const m = members.find((x) => x.user_id === id); return m ? people.get(m.role).name : "คนในบ้าน"; };
 
   return (
     <PresenceContext.Provider value={{ members, online, sendHeart }}>
@@ -91,40 +92,38 @@ function ago(iso: string | null): string {
   return d < 30 ? `เปิดแอปล่าสุด ${d} วันที่แล้ว` : "นานแล้วที่ไม่ได้เปิดแอป";
 }
 
-const MASCOT: Record<Role, typeof Bear> = { dad: Bear, mom: Bunny };
-
 /** มาสคอตครอบครัวที่หน้าวันนี้: ใครออนไลน์จะเด้งและมีจุดเขียว แตะเพื่อดูสถานะหรือส่งหัวใจ */
 export function FamilyPresence({ me, size = 44 }: { me: string; size?: number }) {
   const { members, online, sendHeart } = usePresence();
+  const { people } = useHousehold();
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const sorted = [...members].sort((a, b) => (a.role === "dad" ? -1 : 1) - (b.role === "dad" ? -1 : 1));
   const sel = members.find((m) => m.user_id === open);
+  const shown = people.list.slice(0, 5);
 
   return (
     <div className="relative">
       <div className="flex items-end">
-        {sorted.map((m, i) => {
-          const isOn = online.has(m.user_id) && m.user_id !== me;
-          const M = MASCOT[m.role];
-          return (
+        {shown.map((p, i) => {
+          const m = members.find((x) => x.role === p.key);
+          const isOn = !!m && online.has(m.user_id) && m.user_id !== me;
+          const face = <><Mascot kind={p.mascot} size={size} happy={isOn} />{isOn && <span className="absolute right-0.5 bottom-1 size-3 rounded-full border-2 border-white bg-[#4CC27A]" />}</>;
+          return m ? (
             <button
-              key={m.user_id}
+              key={p.key}
               onClick={() => { setOpen(open === m.user_id ? null : m.user_id); setMsg(null); }}
-              aria-label={`${PEOPLE[m.role].name}${m.user_id === me ? " (คุณ)" : isOn ? " ออนไลน์อยู่" : ""}`}
+              aria-label={`${p.name}${m.user_id === me ? " (คุณ)" : isOn ? " ออนไลน์อยู่" : ""}`}
               className={`relative ${i ? "-ml-2" : ""} ${isOn ? "hop" : ""}`}
               style={isOn ? { animationDelay: `${i * 0.3}s` } : undefined}
-            >
-              <M size={size} happy={isOn} />
-              {isOn && <span className="absolute right-0.5 bottom-1 size-3 rounded-full border-2 border-white bg-[#4CC27A]" />}
-            </button>
+            >{face}</button>
+          ) : (
+            <span key={p.key} className={`relative ${i ? "-ml-2" : ""}`} role="img" aria-label={p.name}>{face}</span>
           );
         })}
-        <span className={members.length ? "-ml-2" : ""}><Chick size={size} /></span>
       </div>
       {sel && (
         <div className="absolute top-full right-0 z-30 mt-2 w-60 rounded-2xl bg-white p-3 text-sm shadow-[0_8px_28px_rgba(74,59,54,.18)]">
-          <p className="font-semibold">{PEOPLE[sel.role].name}{sel.user_id === me && " (คุณ)"}</p>
+          <p className="font-semibold">{people.get(sel.role).name}{sel.user_id === me && " (คุณ)"}</p>
           {sel.user_id === me ? (
             <p className="mt-0.5 text-muted">คนอื่นในบ้านจะเห็นตัวการ์ตูนของคุณเด้งตอนคุณเปิดแอปอยู่</p>
           ) : (
@@ -137,7 +136,7 @@ export function FamilyPresence({ me, size = 44 }: { me: string; size?: number })
                 onClick={async () => {
                   play("heart");
                   const err = await sendHeart(sel.user_id);
-                  setMsg(err ?? `ส่งหัวใจให้${PEOPLE[sel.role].name}แล้ว 💗`);
+                  setMsg(err ?? `ส่งหัวใจให้${people.get(sel.role).name}แล้ว 💗`);
                 }}
               >ส่งหัวใจ 💗</button>
               {msg && <p role="status" className="mt-1.5 text-center text-xs text-muted">{msg}</p>}

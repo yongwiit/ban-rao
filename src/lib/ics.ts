@@ -1,4 +1,4 @@
-import { PEOPLE, type Who } from "./family";
+import type { Who } from "./family";
 
 export type FeedEvent = {
   id: string; title: string; starts_at: string; ends_at: string | null; all_day: boolean;
@@ -22,7 +22,7 @@ function fold(line: string): string {
   return out.join("\r\n");
 }
 
-export function buildIcs(events: FeedEvent[]): string {
+export function buildIcs(events: FeedEvent[], names: Record<string, string> = {}): string {
   const now = utc(new Date());
   const lines = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ban-rao//TH", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
@@ -39,7 +39,7 @@ export function buildIcs(events: FeedEvent[]): string {
     } else {
       lines.push(`DTSTART:${utc(start)}`, `DTEND:${utc(new Date(start.getTime() + 60 * 60 * 1000))}`);
     }
-    const who = PEOPLE[e.who]?.name ?? "";
+    const who = names[e.who] ?? "";
     lines.push(`SUMMARY:${esc(`${e.title}${who && e.who !== "all" ? ` (${who})` : ""}`)}`);
     const desc = [e.note, e.private ? "🔒 เห็นคนเดียว" : null, "จากแอปบ้านเรา"].filter(Boolean).join("\n");
     lines.push(`DESCRIPTION:${esc(desc)}`);

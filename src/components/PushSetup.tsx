@@ -116,7 +116,7 @@ export function PushSetup() {
           <p className="text-muted">เครื่องนี้รับแจ้งเตือนอยู่</p>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_new} onChange={() => toggle("notify_new")} />เมื่อมีคนเพิ่มหรือแก้นัด</label>
           <label className="flex min-h-11 items-center gap-2"><input type="checkbox" className="size-5 accent-cocoa" checked={prefs.notify_remind} onChange={() => toggle("notify_remind")} />เตือนก่อนถึงนัด</label>
-          <p className="text-xs text-muted">นัดเห็นคนเดียว เตือนเฉพาะเจ้าของ · นัดของพ่ออั้มหรือแม่แพ็ค เตือนเฉพาะคนนั้น · นัดน้องเพิร์ลหรือทั้งบ้าน เตือนทุกคน</p>
+          <p className="text-xs text-muted">นัดเห็นคนเดียว เตือนเฉพาะเจ้าของ · นัดของพ่อหรือแม่ เตือนเฉพาะคนนั้น · นัดของลูกหรือทั้งบ้าน เตือนทุกคน</p>
           <div className="flex gap-2">
             <button className="btn-soft flex-1" onClick={() => test()}>ทดสอบแจ้งเตือน</button>
             <button className="btn-soft flex-1" disabled={busy} onClick={disable}>ปิดในเครื่องนี้</button>

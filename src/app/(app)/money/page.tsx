@@ -8,7 +8,7 @@ import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
-import { BILL_PERIODS, PAID_FROM, categoryLabel, isHouseholdSpend, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
+import { BILL_PERIODS, paidFromLabel, categoryLabel, isHouseholdSpend, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { momOwesDad } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
@@ -16,7 +16,7 @@ import { useLive } from "@/lib/useLive";
 import type { BillRow, ExpenseRow, SettlementRow } from "@/lib/types";
 
 export default function MoneyPage() {
-  const { household, reloadHousehold } = useHousehold();
+  const { household, reloadHousehold, people } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
@@ -104,7 +104,7 @@ export default function MoneyPage() {
         <div className="flex flex-1 flex-col">
           <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งครึ่ง)</span>
           <span className="font-semibold">
-            {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${PEOPLE.mom.name}โอนให้${PEOPLE.dad.name} ${baht(owe)} บาท` : `${PEOPLE.dad.name}โอนให้${PEOPLE.mom.name} ${baht(-owe)} บาท`}
+            {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${people.get("mom").name}โอนให้${people.get("dad").name} ${baht(owe)} บาท` : `${people.get("dad").name}โอนให้${people.get("mom").name} ${baht(-owe)} บาท`}
           </span>
         </div>
         {owe !== 0 && <button onClick={settle} className="btn-soft min-h-10 px-3.5 text-[13px]">เคลียร์แล้ว</button>}
@@ -140,7 +140,7 @@ export default function MoneyPage() {
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{categoryLabel(e.category).slice(0, 2)}</span>}</span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-semibold">{e.merchant || categoryLabel(e.category)}</span>
-              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} · {PAID_FROM[e.paid_from]}{e.slip_ref ? " · จากสลิป" : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
+              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? " · จากสลิป" : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
             </span>
             {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
             <span className="font-semibold">{baht(Number(e.amount))}</span>
