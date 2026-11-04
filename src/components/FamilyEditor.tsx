@@ -62,8 +62,8 @@ function PersonForm({ p, householdId, keys, onDone }: { p: Person | null; househ
     setBusy(true);
     const db = supabase().from("household_people");
     const { error } = p
-      ? await db.update({ name: name.trim(), mascot, color, ...(p.kid ? {} : { promptpay }) }).eq("household_id", householdId).eq("key", p.key)
-      : await db.insert({ household_id: householdId, key: nextKidKey(keys), name: name.trim(), mascot, color, sort: 10 + used });
+      ? await db.update({ name: name.trim(), mascot, color, promptpay }).eq("household_id", householdId).eq("key", p.key)
+      : await db.insert({ household_id: householdId, key: nextKidKey(keys), name: name.trim(), mascot, color, sort: 10 + used, promptpay });
     setBusy(false);
     if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
     await onDone();
@@ -105,11 +105,11 @@ function PersonForm({ p, householdId, keys, onDone }: { p: Person | null; househ
           ))}
         </div>
       </fieldset>
-      {p && !p.kid && (
+      {(
         <label className="flex flex-col gap-1 text-sm font-medium">
           พร้อมเพย์ (ไม่บังคับ)
           <input className="field" inputMode="numeric" maxLength={17} value={pp} placeholder="เบอร์มือถือ หรือเลขบัตรประชาชน" onChange={(e) => setPp(e.target.value)} />
-          <span className="text-xs font-normal text-muted">ใช้สร้าง QR ให้อีกฝ่ายสแกนโอนตอนเคลียร์เงินหรือฝากเงินออม แอปไม่ได้เชื่อมกับธนาคาร และเห็นเฉพาะคนในบ้าน</span>
+          <span className="text-xs font-normal text-muted">{p?.kid || !p ? "ใช้สร้าง QR ตอนพ่อแม่โอนค่าขนมหรือเงินรางวัลให้ลูก (ที่หน้าสมุดดาว)" : "ใช้สร้าง QR ให้อีกฝ่ายสแกนโอนตอนเคลียร์เงินหรือฝากเงินออม"} · แอปไม่ได้เชื่อมกับธนาคาร และเห็นเฉพาะคนในบ้าน</span>
         </label>
       )}
       {msg && <p role="alert" className="text-sm text-rose">{msg}</p>}

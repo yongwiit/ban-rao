@@ -10,6 +10,9 @@ import { play } from "@/lib/sfx";
 import { confetti } from "@/lib/confetti";
 import { thaiDate, thaiTime } from "@/lib/format";
 import type { StarLog, StarReward, StarTask } from "@/lib/types";
+import { PromptPayQR } from "@/components/PromptPayQR";
+import { validPromptPay } from "@/lib/promptpay";
+import Link from "next/link";
 
 /** ยอดดาว: ได้ดาวนับเมื่ออนุมัติ / แลกรางวัลหักทันทีแม้ยังรอ */
 function balanceOf(logs: StarLog[], kid: string) {
@@ -21,6 +24,8 @@ export default function StarsPage() {
   const hid = household.id;
   const kids = people.list.filter((p) => p.kid);
   const [picked, setPicked] = useState<string | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmt, setPayAmt] = useState("");
   const kid = isParent ? (picked && kids.some((k) => k.key === picked) ? picked : kids[0]?.key) : role;
   const me = kid ? people.get(kid) : null;
 
@@ -127,7 +132,22 @@ export default function StarsPage() {
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
         <h1 className="font-display text-[26px] font-bold">สมุดสะสมดาว ⭐</h1>
+        {isParent && me && <button className="btn-soft min-h-10 px-3.5 text-[13px]" onClick={() => setPayOpen(true)}>💸 โอนให้{me.name}</button>}
       </header>
+      <Sheet open={payOpen} onClose={() => setPayOpen(false)} title={me ? `โอนเงินให้${me.name}` : ""}>
+        {me && (validPromptPay(me.promptpay) ? (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              ยอดเงิน (บาท) ไม่ใส่ก็ได้
+              <input className="field" inputMode="decimal" value={payAmt} onChange={(e) => setPayAmt(e.target.value.replace(/[^\d.]/g, ""))} placeholder="เช่น ค่าขนม 100" />
+            </label>
+            <div className="flex flex-wrap gap-2">{[20, 50, 100, 200].map((n) => <button key={n} type="button" className="chip" aria-pressed={payAmt === String(n)} onClick={() => setPayAmt(String(n))}>{n}</button>)}</div>
+            <PromptPayQR id={me.promptpay} amount={Number(payAmt) > 0 ? Number(payAmt) : undefined} name={me.name} />
+          </div>
+        ) : (
+          <p className="rounded-2xl bg-sand p-3 text-sm">ใส่พร้อมเพย์ของ{me.name}ก่อนนะ ที่ <Link href="/settings" className="font-semibold underline">ตั้งค่า → คนในบ้าน</Link> แตะชื่อ{me.name} แล้วใส่เบอร์ในช่อง &quot;พร้อมเพย์&quot;</p>
+        ))}
+      </Sheet>
 
       {isParent && kids.length > 1 && (
         <div className="flex flex-wrap gap-2">
