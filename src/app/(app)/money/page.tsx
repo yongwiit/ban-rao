@@ -92,7 +92,7 @@ export default function MoneyPage() {
             <span className="h-2.5 overflow-hidden rounded-full bg-white"><span className="block h-2.5 bg-rose" style={{ width: `${Math.min(100, budget ? (total / budget) * 100 : 0)}%` }} /></span>
             <span className="text-xs">
               งบ {baht(budget)} · {total <= budget ? `เหลือ ${baht(budget - total)} บาท` : `เกินงบ ${baht(total - budget)} บาท`}
-              {isThisMonth && total <= budget ? ` สำหรับ ${daysLeft} วัน` : ""} · แตะเพื่อแก้งบ
+              {isThisMonth && total <= budget ? ` สำหรับ ${daysLeft} วัน` : ""} · <b className="underline">ปรับงบ</b>
             </span>
           </button>
         )}
@@ -175,7 +175,7 @@ export default function MoneyPage() {
       </Sheet>
 
       <Sheet open={budgetOpen} onClose={() => setBudgetOpen(false)} title="งบต่อเดือน">
-        <BudgetForm current={budget} onDone={async () => { await reloadHousehold(); setBudgetOpen(false); }} householdId={hid} />
+        <BudgetForm key={budget} current={budget} onDone={async () => { await reloadHousehold(); setBudgetOpen(false); }} householdId={hid} />
       </Sheet>
     </div>
   );
@@ -221,14 +221,29 @@ function BillForm({ bill, onDone }: { bill: BillRow | null; onDone: () => void }
 }
 
 function BudgetForm({ current, onDone, householdId }: { current: number; onDone: () => void; householdId: string }) {
-  const [v, setV] = useState(String(current));
+  const [v, setV] = useState(Math.round(current));
+  const max = Math.max(100000, Math.ceil(v / 10000) * 10000);
+  const step = (n: number) => setV((x) => Math.max(0, x + n));
   return (
-    <form className="flex flex-col gap-3" onSubmit={async (e) => {
+    <form className="flex flex-col gap-4" onSubmit={async (e) => {
       e.preventDefault();
-      const n = Number(v.replace(/,/g, ""));
-      if (n >= 0) { await supabase().from("households").update({ monthly_budget: n }).eq("id", householdId); onDone(); }
+      await supabase().from("households").update({ monthly_budget: v }).eq("id", householdId);
+      onDone();
     }}>
-      <label className="flex flex-col gap-1 text-sm font-medium">งบต่อเดือน (บาท)<input className="field" inputMode="decimal" value={v} onChange={(e) => setV(e.target.value)} /></label>
+      <p className="text-center font-display text-4xl font-bold">{baht(v)} <span className="text-base font-medium">บาท</span></p>
+      <label className="flex flex-col gap-2 text-sm font-medium">
+        <span className="sr-only">เลื่อนเพื่อปรับงบ</span>
+        <input type="range" min={0} max={max} step={500} value={v} onChange={(e) => setV(Number(e.target.value))} className="budget-range w-full" />
+        <span className="flex justify-between text-xs text-muted"><span>0</span><span>{baht(max / 2)}</span><span>{baht(max)}</span></span>
+      </label>
+      <div className="grid grid-cols-4 gap-2">
+        {[-1000, -500, 500, 1000].map((n) => (
+          <button type="button" key={n} className="btn-soft min-h-11 px-0 text-sm" onClick={() => step(n)}>{n > 0 ? "+" : "−"}{baht(Math.abs(n))}</button>
+        ))}
+      </div>
+      <label className="flex flex-col gap-1 text-sm font-medium">หรือพิมพ์ตัวเลข
+        <input className="field" inputMode="numeric" value={String(v)} onChange={(e) => setV(Number(e.target.value.replace(/[^0-9]/g, "")) || 0)} />
+      </label>
       <button className="btn-dark">บันทึกงบ</button>
     </form>
   );
