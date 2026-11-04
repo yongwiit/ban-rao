@@ -14,7 +14,7 @@ export type ExpenseRow = {
   id: string; amount: number; spent_at: string; merchant: string; category: Category; paid_from: PaidFrom;
   private: boolean; status: "pending" | "confirmed"; slip_ref: string | null; bank: string | null;
   note: string | null; created_by: string; created_at: string;
-  bill_id?: string | null; card_charge_id?: string | null;
+  bill_id?: string | null; card_charge_id?: string | null; other_share?: number | null;
 };
 export type BillRow = {
   id: string; name: string; amount: number; period: BillPeriod; due_day: number | null; active: boolean;
@@ -23,6 +23,8 @@ export type BillRow = {
   auto_record: boolean; auto_from: string | null;
   /** ยอดไม่คงที่: เตือนให้จดยอดจริงทุกเดือน */
   variable: boolean;
+  /** สัดส่วนที่อีกฝ่ายช่วยจ่าย 0–1 (null = ครึ่ง) เมื่อพ่อหรือแม่ออกก่อน */
+  other_share?: number | null;
 };
 export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
 export type MemberRow = { user_id: string; role: Role };

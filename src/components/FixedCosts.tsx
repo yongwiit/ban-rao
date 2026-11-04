@@ -12,6 +12,15 @@ import { BILL_PERIODS, FIXED_COST_PRESETS, PAID_FROM_KEYS, monthlySetAside, paid
 import type { ChargeRow } from "@/lib/cards";
 import type { BillRow, ExpenseRow } from "@/lib/types";
 import type { ExpenseDraft } from "./ExpenseForm";
+import { myShare, otherShare } from "@/lib/settle";
+
+const otherOf = (p: PaidFrom) => (p === "dad" ? "mom" : "dad");
+/** " · แม่ช่วย 50%" สำหรับค่าใช้จ่ายบ้านที่พ่อ/แม่ออกก่อน */
+function shareText(b: BillRow, people: ReturnType<typeof useHousehold>["people"]) {
+  if (b.paid_from !== "dad" && b.paid_from !== "mom") return "";
+  const v = otherShare(b.other_share);
+  return v > 0 ? ` · ${people.get(otherOf(b.paid_from)).name}ช่วย ${Math.round(v * 100)}%` : " · จ่ายคนเดียว";
+}
 
 /** ค่าใช้จ่ายประจำต่อเดือน (รวม subscription ในบัตรที่ยังใช้อยู่) */
 export function fixedMonthly(bills: BillRow[], subs: ChargeRow[] = []) {
@@ -23,14 +32,14 @@ export function fixedMonthly(bills: BillRow[], subs: ChargeRow[] = []) {
  * ค่าใช้จ่ายประจำ: แท็บบ้าน = ของบ้าน · แท็บของฉัน = ส่วนตัว + subscription ในบัตรของฉัน
  * หักบัญชีอัตโนมัติ → ระบบจดให้ทุกเดือน · ยอดไม่คงที่ → กด "จดยอดเดือนนี้"
  */
-export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecord }: {
-  scope: "home" | "mine"; bills: BillRow[]; subs: ChargeRow[]; monthRows: ExpenseRow[]; isThisMonth: boolean;
+export function FixedCosts({ scope, bills, shareBills = [], subs, monthRows, isThisMonth, onRecord }: {
+  scope: "home" | "mine"; bills: BillRow[]; shareBills?: BillRow[]; subs: ChargeRow[]; monthRows: ExpenseRow[]; isThisMonth: boolean;
   onRecord: (d: ExpenseDraft) => void;
 }) {
   const cats = useCategories();
-  const { people, household } = useHousehold();
+  const { people, household, role } = useHousehold();
   const [open, setOpen] = useState<BillRow | "new" | null>(null);
-  const total = fixedMonthly(bills, subs);
+  const total = fixedMonthly(bills, subs) + shareBills.reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0);
   const now = new Date();
   // ยอดจริงเดือนก่อน ไว้เทียบ (เช่น ค่าน้ำ ค่าไฟ ที่ยอดไม่คงที่)
   const prevRange = monthRange(now.getFullYear(), now.getMonth() - 1);
@@ -44,7 +53,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
         <h2 className="font-display text-[17px] font-semibold">{scope === "home" ? "ค่าใช้จ่ายประจำของบ้าน" : "ค่าใช้จ่ายประจำของฉัน"}</h2>
         <button onClick={() => setOpen("new")} className="min-h-9 px-1 text-sm text-muted">+ เพิ่ม</button>
       </div>
-      {bills.length === 0 && subs.length === 0 && (
+      {bills.length === 0 && subs.length === 0 && shareBills.length === 0 && (
         <p className="text-sm text-muted">{scope === "home"
           ? "เช่น ค่าเช่า ค่าเน็ต ค่าขนมลูก ประกันบ้าน · ค่าน้ำ ค่าไฟ ตั้งเป็น \"ยอดไม่คงที่\" แล้วจดยอดจริงทุกเดือน แอปเทียบกับเดือนก่อนให้"
           : "เช่น ค่าผ่อนรถที่หักบัญชีทุกวันที่ 5 ค่าโทรศัพท์ ประกันชีวิต · ตั้ง \"หักบัญชีอัตโนมัติ\" แล้วแอปจดให้เองทุกเดือน"}</p>
@@ -66,7 +75,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
                 <span className="truncate font-semibold">{b.name}</span>
                 <span className="text-xs text-muted">
                   {b.variable ? "ยอดไม่คงที่ ~" : ""}{baht(Number(b.amount))}/{BILL_PERIODS[b.period].unit}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}
-                  {b.auto_record ? " · จดให้อัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}
+                  {b.auto_record ? " · จดให้อัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}{shareText(b, people)}
                   {last > 0 ? (diff ? ` · ${diff > 0 ? "▲ แพงขึ้น" : "▼ ถูกลง"} ${baht(Math.abs(diff))} จากเดือนก่อน` : ` · เดือนก่อน ${baht(last)}`) : ""}
                 </span>
               </span>
@@ -76,7 +85,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
               : b.auto_record && !b.variable && !missed
                 ? <span className="shrink-0 text-xs text-muted">{dueToday ? "กำลังจด…" : `จดให้วันที่ ${b.due_day}`}</span>
                 : <button className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${dueToday || b.variable ? "bg-butter" : "bg-sand"}`}
-                    onClick={() => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(now), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id })}>
+                    onClick={() => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(now), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id, other_share: b.other_share ?? null })}>
                     จดยอดเดือนนี้
                   </button>)}
             {!(b.period === "monthly" && isThisMonth) && <span className="shrink-0">{baht(monthlySetAside(Number(b.amount), b.period))}</span>}
@@ -93,6 +102,27 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
                 <CatIcon icon={cat.icon} size={30} />
                 <span className="min-w-0 flex-1 truncate">{c.title} <span className="text-xs text-muted">· {c.repeat === "yearly" ? "ทุกปี" : "ทุกเดือน"} วันที่ {Number(c.charged_on.slice(8))}{c.bill_to ? " · เรียกเก็บ" : ""}</span></span>
                 <span>{baht(Number(c.amount))}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      {shareBills.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-dashed border-line pt-2">
+          <span className="text-xs font-semibold text-muted">ส่วนของฉันในค่าใช้จ่ายบ้าน (แก้ได้ที่แท็บของบ้าน)</span>
+          {shareBills.map((b) => {
+            const cat = cats.get(b.category ?? "bill");
+            const sh = myShare(b, role);
+            const rec = monthRows.find((e) => e.bill_id === b.id);
+            const payer = b.paid_from === role ? "ฉันจ่ายก่อน" : `${people.get(b.paid_from).name}จ่ายก่อน · โอนคืนตอนเคลียร์`;
+            return (
+              <span key={b.id} className="flex items-center gap-2.5 text-sm">
+                <CatIcon icon={cat.icon} size={30} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{b.name} <span className="text-xs text-muted">· ส่วนของฉัน {Math.round(sh * 100)}%</span></span>
+                  <span className="text-xs text-muted">{payer}{isThisMonth && rec ? " · ✓ จดเดือนนี้แล้ว" : ""}</span>
+                </span>
+                <span>{baht(Number(b.amount) * sh)}</span>
               </span>
             );
           })}
@@ -123,6 +153,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
   const [due, setDue] = useState(bill?.due_day ? String(bill.due_day) : "");
   const [cat, setCat] = useState(bill?.category ?? (scope === "home" ? "bill" : "car"));
   const [paidFrom, setPaidFrom] = useState<PaidFrom>(bill?.paid_from ?? (scope === "home" ? "pot" : "personal"));
+  const [share, setShare] = useState<number>(bill?.other_share == null ? 0.5 : Number(bill.other_share));
   const [method, setMethod] = useState<Method>(bill?.variable ? "variable" : bill?.auto_record || !bill ? "auto" : "manual");
   const [err, setErr] = useState<string | null>(null);
   const n = Number(amount.replace(/,/g, ""));
@@ -146,6 +177,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
     const row = {
       name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? d : null, category: cat, paid_from: paidFrom,
       auto_record: auto, variable: method === "variable",
+      other_share: paidFrom === "dad" || paidFrom === "mom" ? share : null,
       // เริ่มจดอัตโนมัติจากวันนี้ (ไม่ย้อนจดเดือนที่ผ่านมา)
       auto_from: auto ? (bill?.auto_record && bill.auto_from ? bill.auto_from : dayKey(new Date())) : null,
       // เปลี่ยนเป็นส่วนตัว = เป็นของคนที่แก้ (รายการเก่าอาจยังไม่มีเจ้าของ)
@@ -193,6 +225,16 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
         </div>
         <span className="mt-1 block text-xs text-muted">{paidFrom === "personal" ? "🙋 ส่วนตัว: เห็นเฉพาะคุณ อยู่ในแท็บ \"ของฉัน\"" : cats.get(cat).scope === "personal" ? "หมวดนี้ปกติเป็นของส่วนตัว ถ้าเป็นของคนเดียวเลือก \"จ่ายส่วนตัว\"" : "🏠 ของบ้าน: อยู่ในแท็บ \"ของบ้าน\""}</span>
       </fieldset>
+      {(paidFrom === "dad" || paidFrom === "mom") && (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium">{people.get(otherOf(paidFrom)).name}ช่วยจ่ายเท่าไหร่</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {[0, 0.3, 0.5, 0.7, 1].map((v) => <button type="button" key={v} className="chip" aria-pressed={share === v} onClick={() => setShare(v)}>{v === 0 ? "ไม่ต้อง" : v === 0.5 ? "ครึ่ง 50%" : v === 1 ? "ทั้งหมด" : `${v * 100}%`}</button>)}
+            <label className="chip flex items-center gap-1">อื่นๆ<input aria-label="เปอร์เซ็นต์ที่ช่วยจ่าย" className="w-12 bg-transparent text-right outline-none" inputMode="numeric" value={[0, 0.3, 0.5, 0.7, 1].includes(share) ? "" : String(Math.round(share * 100))} placeholder="" onChange={(e) => { const x = Number(e.target.value.replace(/\D/g, "")); if (x >= 0 && x <= 100) setShare(x / 100); }} />%</label>
+          </div>
+          {n > 0 && <span className="mt-1 block text-xs text-muted">{people.get(otherOf(paidFrom)).name}โอนคืน {baht(n * share)} บาท · {people.get(paidFrom).name}ออกเอง {baht(n * (1 - share))} บาท (คิดในยอดเคลียร์กัน)</span>}
+        </fieldset>
+      )}
       {n > 0 && <p className="rounded-2xl bg-mint px-3 py-2 text-sm">ต้องเตรียมเดือนละ <b>{baht(monthlySetAside(n, period))} บาท</b>{period === "daily" ? ` (${baht(n)} × 365 วัน ÷ 12)` : ""}</p>}
       {err && <p role="alert" className="text-sm text-rose">{err}</p>}
       <button className="btn-dark">บันทึก</button>

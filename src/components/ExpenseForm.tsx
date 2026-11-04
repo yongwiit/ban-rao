@@ -21,6 +21,8 @@ export type ExpenseDraft = {
   bank?: string | null;
   /** จดจากค่าใช้จ่ายประจำ (ใหม่เท่านั้น) */
   bill_id?: string | null;
+  /** สัดส่วนที่อีกฝ่ายช่วยจ่าย (จากค่าใช้จ่ายประจำ) */
+  other_share?: number | null;
 };
 
 export function toDraftTime(iso: string): { date: string; time: string } {
@@ -61,6 +63,7 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
       slip_ref: d.slip_ref ?? null,
       bank: d.bank ?? null,
       ...(d.bill_id && !d.id ? { bill_id: d.bill_id } : {}),
+      ...(d.other_share != null && !d.id ? { other_share: d.other_share } : {}),
     };
     const q = d.id ? supabase().from("expenses").update(row).eq("id", d.id) : supabase().from("expenses").insert(row);
     const { error } = await q;

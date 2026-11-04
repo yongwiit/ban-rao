@@ -22,13 +22,13 @@ import { SpendHistory } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
 import { paidFromLabel, isHouseholdSpend } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
-import { momOwesDad } from "@/lib/settle";
+import { momOwesDad, myShare } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { BillRow, ExpenseRow, SettlementRow } from "@/lib/types";
 
 export default function MoneyPage() {
-  const { household, reloadHousehold, people, userId } = useHousehold();
+  const { household, reloadHousehold, people, userId, role } = useHousehold();
   const [scope, setScope] = useState<"home" | "mine">("home");
   const mineOnly = (e: Pick<ExpenseRow, "created_by" | "paid_from" | "private">) => e.created_by === userId && (e.paid_from === "personal" || e.private);
   const inScope = scope === "home" ? isHouseholdSpend : mineOnly;
@@ -50,8 +50,8 @@ export default function MoneyPage() {
 
   const month = useLive<ExpenseRow>("expenses", hid, () =>
     supabase().from("expenses").select("*").gte("spent_at", start).lt("spent_at", end).order("spent_at", { ascending: false }), [start]);
-  const allShared = useLive<Pick<ExpenseRow, "amount" | "paid_from" | "private">>("expenses", hid, () =>
-    supabase().from("expenses").select("amount, paid_from, private").neq("paid_from", "pot"));
+  const allShared = useLive<Pick<ExpenseRow, "amount" | "paid_from" | "private" | "other_share">>("expenses", hid, () =>
+    supabase().from("expenses").select("amount, paid_from, private, other_share").neq("paid_from", "pot"));
   const settlements = useLive<SettlementRow>("settlements", hid, () => supabase().from("settlements").select("*"));
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").order("created_at"));
 
@@ -66,6 +66,8 @@ export default function MoneyPage() {
   const cats = useCategories();
   const today = dayKey(now);
   const activeBills = bills.rows.filter((b) => b.active && (scope === "home" ? b.paid_from !== "personal" : b.paid_from === "personal" && b.created_by === userId));
+  // แท็บของฉัน: ค่าใช้จ่ายบ้านที่พ่อ/แม่ออกก่อน → แสดงส่วนของฉัน
+  const shareBills = scope === "mine" ? bills.rows.filter((b) => b.active && b.period === "monthly" && myShare(b, role) > 0) : [];
   const mySubs = scope === "mine" ? cards.charges.filter((c) => activeSub(c, today)) : [];
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const order = useSectionOrder(scope);
@@ -101,7 +103,7 @@ export default function MoneyPage() {
       <section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}
         <div className="flex flex-1 flex-col">
-          <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งครึ่ง)</span>
+          <span className="text-[13px] text-muted">ยอดเคลียร์กัน (ที่ออกก่อน แบ่งตามสัดส่วน)</span>
           <span className="font-semibold">
             {owe === 0 ? "เคลียร์กันครบแล้ว" : owe > 0 ? `${people.get("mom").name}โอนให้${people.get("dad").name} ${baht(owe)} บาท` : `${people.get("dad").name}โอนให้${people.get("mom").name} ${baht(-owe)} บาท`}
           </span>
@@ -111,7 +113,7 @@ export default function MoneyPage() {
     ) },
     cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", node: <CreditCards /> },
     goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
-    fixed: { label: "📌 ค่าใช้จ่ายประจำ", node: <FixedCosts scope={scope} bills={activeBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
+    fixed: { label: "📌 ค่าใช้จ่ายประจำ", node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
     list: { label: "🧾 รายการเดือนนี้", node: (
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
@@ -155,7 +157,7 @@ export default function MoneyPage() {
 
       <BillRequests />
 
-      <MonthCard scope={scope} spent={total} bills={activeBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} onRecord={setEditing} header={
+      <MonthCard scope={scope} spent={total} bills={activeBills} shareBills={shareBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} onRecord={setEditing} header={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button aria-label="เดือนก่อน" onClick={() => shift(-1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon dir="left" size={16} /></button>

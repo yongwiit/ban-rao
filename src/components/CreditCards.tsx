@@ -193,10 +193,13 @@ function CardDetail({ card, charges, today, onEditCard, refresh }: { card: CardR
           const cat = cats.get(c.category);
           const how = isSub(c)
             ? `${REPEAT_LABEL[c.repeat as "monthly" | "yearly"]}${c.ended_on ? ` · เลิกใช้ ${day(c.ended_on)}` : ""}`
-            : c.months > 1 ? (st.done ? "ผ่อนครบแล้ว" : `ผ่อน ${st.paid}/${c.months} · เดือนละ ${baht(st.perMonth)}`) : "จ่ายเต็ม";
+            : c.months > 1 ? (st.done ? "ผ่อนครบแล้ว" : `ผ่อนไป ${st.paid} เหลือ ${st.left} งวด · เดือนละ ${baht(st.perMonth)}`) : "จ่ายเต็ม";
           return (
             <button key={c.id} onClick={() => setForm(c)} className={`flex items-center gap-2.5 text-left text-sm ${c.ended_on && c.ended_on < today ? "opacity-60" : ""}`}>
-              <CatIcon icon={cat.icon} size={36} />
+              <span className="relative shrink-0">
+                <CatIcon icon={cat.icon} size={36} />
+                {c.months > 1 && <span className={`absolute -bottom-1 -right-2 rounded-md px-1 text-[10px] font-bold leading-4 ring-2 ring-white ${st.done ? "bg-mint text-[#3F8A5F]" : "bg-cocoa text-white"}`}>{st.done ? "✓" : `${st.paid}/${c.months}`}</span>}
+              </span>
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate font-semibold">{c.title}</span>
                 <span className="text-xs text-muted">{day(c.charged_on)} · {cat.label} · {how}{billText(c, (k) => people.get(k).name)}</span>
