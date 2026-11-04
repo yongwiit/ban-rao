@@ -7,7 +7,7 @@ export type EventRow = {
   repeat: Repeat; remind_before: number | null;
 };
 export type CommentRow = { id: string; event_id: string; body: string; created_by: string; created_at: string };
-export type ListRow = { id: string; name: string; sort: number };
+export type ListRow = { id: string; name: string; sort: number; remind_at: string | null; remind_repeat: "none" | "daily" | "weekly" | "monthly" };
 export type ItemRow = { id: string; list_id: string; name: string; done: boolean; created_by: string; created_at: string };
 export type CategoryRow = { id: string; name: string };
 export type ExpenseRow = {

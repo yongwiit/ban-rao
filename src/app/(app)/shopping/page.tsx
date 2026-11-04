@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 import { useHousehold } from "@/components/Household";
 import { Bunny } from "@/components/Mascots";
 import { CheckIcon, EditIcon, PlusIcon, TrashIcon } from "@/components/Icons";
+import { dayKey, thaiDate, thaiTime } from "@/lib/format";
+import { thHm } from "@/lib/recur";
 import { Sheet } from "@/components/Sheet";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
@@ -19,6 +21,7 @@ export default function ShoppingPage() {
   const [newList, setNewList] = useState("");
   const [editList, setEditList] = useState<ListRow | null>(null);
   const [editItem, setEditItem] = useState<ItemRow | null>(null);
+  const [remindList, setRemindList] = useState<ListRow | null>(null);
   const listId = lists.rows.some((l) => l.id === picked) ? picked! : lists.rows[0]?.id;
   const current = lists.rows.find((l) => l.id === listId);
 
@@ -73,9 +76,14 @@ export default function ShoppingPage() {
         ))}
       </div>
       {current && (
-        <button onClick={() => setEditList(current)} className="-mt-2 flex min-h-9 items-center gap-1 self-start text-sm text-muted">
-          <EditIcon size={14} />แก้ชื่อ / ลบลิสต์ &quot;{current.name}&quot;
-        </button>
+        <div className="-mt-2 flex flex-wrap gap-x-4">
+          <button onClick={() => setEditList(current)} className="flex min-h-9 items-center gap-1 text-sm text-muted">
+            <EditIcon size={14} />แก้ชื่อ / ลบลิสต์
+          </button>
+          <button onClick={() => setRemindList(current)} className="flex min-h-9 items-center gap-1 text-sm text-muted">
+            🔔 {current.remind_at ? `เตือน ${thaiDate(current.remind_at, { weekday: "short", day: "numeric", month: "short" })} ${thaiTime(current.remind_at)}${REPEAT_LIST[current.remind_repeat] ? ` · ${REPEAT_LIST[current.remind_repeat]}` : ""}` : "ตั้งเตือนไปซื้อ"}
+          </button>
+        </div>
       )}
 
       <form onSubmit={(e) => { e.preventDefault(); add(name); }} className="flex items-center gap-2 rounded-[18px] bg-white py-1 pr-1.5 pl-3.5 shadow-[0_4px_14px_rgba(74,59,54,.06)]">
@@ -127,6 +135,10 @@ export default function ShoppingPage() {
         )}
       </Sheet>
 
+      <Sheet open={!!remindList} onClose={() => setRemindList(null)} title="เตือนไปซื้อของ">
+        {remindList && <RemindForm key={remindList.id} list={remindList} onDone={async () => { await lists.refresh(); setRemindList(null); }} />}
+      </Sheet>
+
       <Sheet open={!!editItem} onClose={() => setEditItem(null)} title="แก้ไขของ">
         {editItem && (
           <RenameForm key={editItem.id} initial={editItem.name} label="ชื่อของ" deleteLabel="ลบของชิ้นนี้"
@@ -148,6 +160,50 @@ function RenameForm({ initial, label, deleteLabel, onSave, onDelete }: {
       <label className="flex flex-col gap-1 text-sm font-medium">{label}<input className="field" required value={v} onChange={(e) => setV(e.target.value)} /></label>
       <button className="btn-dark">บันทึก</button>
       <button type="button" onClick={onDelete} className="flex min-h-11 items-center justify-center gap-1 text-sm text-rose"><TrashIcon />{deleteLabel}</button>
+    </form>
+  );
+}
+
+const REPEAT_LIST: Record<ListRow["remind_repeat"], string> = { none: "", daily: "ทุกวัน", weekly: "ทุกสัปดาห์", monthly: "ทุกเดือน" };
+
+function RemindForm({ list, onDone }: { list: ListRow; onDone: () => Promise<void> }) {
+  const [date, setDate] = useState(() => dayKey(list.remind_at ?? new Date(Date.now() + 864e5)));
+  const [time, setTime] = useState(list.remind_at ? thHm(list.remind_at) : "17:00");
+  const [repeat, setRepeat] = useState<ListRow["remind_repeat"]>(list.remind_repeat ?? "none");
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const at = new Date(`${date}T${time}:00+07:00`);
+    if (repeat === "none" && at.getTime() < Date.now()) return setErr("เวลานี้ผ่านไปแล้ว เลือกเวลาข้างหน้า");
+    const { error } = await supabase().from("shopping_lists").update({ remind_at: at.toISOString(), remind_repeat: repeat }).eq("id", list.id);
+    if (error) return setErr(error.message);
+    await onDone();
+  }
+  async function clear() {
+    await supabase().from("shopping_lists").update({ remind_at: null, remind_repeat: "none" }).eq("id", list.id);
+    await onDone();
+  }
+
+  return (
+    <form onSubmit={save} className="flex flex-col gap-3">
+      <p className="text-sm text-muted">ถึงเวลาจะแจ้งเตือนทุกคนในบ้าน พร้อมบอกของที่ยังไม่ได้ซื้อในลิสต์ &quot;{list.name}&quot; (ถ้าลิสต์ว่างจะไม่เตือน)</p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1 text-sm font-medium">วันที่<input className="field" type="date" required value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="flex flex-col gap-1 text-sm font-medium">เวลา<input className="field" type="time" required value={time} onChange={(e) => setTime(e.target.value)} /></label>
+      </div>
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1 text-sm font-medium">ซ้ำ</legend>
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(REPEAT_LIST) as ListRow["remind_repeat"][]).map((r) => (
+            <button type="button" key={r} className="chip" aria-pressed={repeat === r} onClick={() => setRepeat(r)}>{REPEAT_LIST[r] || "ครั้งเดียว"}</button>
+          ))}
+        </div>
+      </fieldset>
+      {err && <p role="alert" className="text-sm text-rose">{err}</p>}
+      <button className="btn-dark">บันทึกการเตือน</button>
+      {list.remind_at && <button type="button" onClick={clear} className="min-h-11 text-sm text-rose">ยกเลิกการเตือน</button>}
+      <p className="text-xs text-muted">ต้องเปิดแจ้งเตือนในหน้าตั้งค่าก่อน (ปุ่มเฟืองหน้าวันนี้)</p>
     </form>
   );
 }

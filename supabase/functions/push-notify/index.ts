@@ -107,7 +107,48 @@ async function onCron() {
       });
     }
   }
+  sent += await onListCron(now);
   return { sent };
+}
+
+function nextAt(at: Date, repeat: string): Date | null {
+  const day = thDay(at);
+  let nd: string;
+  if (repeat === "daily") nd = addDays(day, 1);
+  else if (repeat === "weekly") nd = addDays(day, 7);
+  else if (repeat === "monthly") {
+    const [y, m, d] = day.split("-").map(Number);
+    const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+    const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+    nd = `${ny}-${String(nm).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+  } else return null;
+  return new Date(`${nd}T${thHm(at)}:00+07:00`);
+}
+
+/** เตือนไปซื้อของตามเวลาที่ตั้งไว้ในแต่ละลิสต์ */
+async function onListCron(now: number) {
+  const { data } = await db.from("shopping_lists").select("id, household_id, name, remind_at, remind_repeat")
+    .not("remind_at", "is", null).lte("remind_at", new Date(now).toISOString());
+  let sent = 0;
+  for (const l of data ?? []) {
+    const old = new Date(l.remind_at);
+    let next = nextAt(old, l.remind_repeat);
+    while (next && next.getTime() <= now) next = nextAt(next, l.remind_repeat);
+    // อัปเดตแบบมีเงื่อนไข = จองสิทธิ์ส่ง กันส่งซ้ำ
+    const { data: claimed } = await db.from("shopping_lists").update({ remind_at: next ? next.toISOString() : null })
+      .eq("id", l.id).eq("remind_at", l.remind_at).select("id");
+    if (!claimed?.length || old.getTime() <= now - WINDOW_MIN * 60_000) continue;
+    const { data: items } = await db.from("shopping_items").select("name").eq("list_id", l.id).eq("done", false).order("created_at");
+    if (!items?.length) continue;
+    const { data: mem } = await db.from("members").select("user_id").eq("household_id", l.household_id);
+    const names = items.slice(0, 5).map((i) => i.name).join(", ") + (items.length > 5 ? ` และอีก ${items.length - 5} อย่าง` : "");
+    sent += await send((mem ?? []).map((m) => m.user_id), "notify_remind", {
+      title: `🛒 ถึงเวลาซื้อของ: ${l.name}`,
+      body: `ต้องซื้อ ${items.length} อย่าง: ${names}`,
+      url: "/shopping", tag: `ls-${l.id}`,
+    });
+  }
+  return sent;
 }
 
 async function onTest(endpoint: string) {
