@@ -1,0 +1,163 @@
+# สำรองฐานข้อมูลแบบเข้ารหัสทุกคืน แล้วลองกู้ลงฐานชั่วคราวในเครื่อง CI เพื่อตรวจว่ากู้ได้จริง
+# - ไฟล์ backup เข้ารหัส AES-256 ด้วย BACKUP_PASSPHRASE ก่อนออกจากเครื่องรัน
+# - การทดสอบกู้คืนทำในฐานชั่วคราวที่ถูกทิ้งเมื่องานจบ ข้อมูลจริงไม่ถูกนำไปไว้บน Dev
+# - log พิมพ์เฉพาะชื่อตารางและผลตรง/ไม่ตรง ไม่พิมพ์ข้อมูล
+# - เมื่อรันด้วยมือหรือ push บน branch ทดสอบ จะซ้อมกู้บน ban-rao-dev (ข้อมูลปลอม) ให้ผ่านก่อน แล้วจึงสำรอง Production
+name: DB backup
+on:
+  schedule:
+    - cron: "0 19 * * *" # 02:00 เวลาไทย
+  workflow_dispatch:
+    inputs:
+      dev_drill_first:
+        description: ซ้อมกู้บน Dev ก่อนสำรอง Production
+        type: boolean
+        default: true
+  push:
+    branches: [phase0-infra]
+    paths: [.github/workflows/db-backup.yml, scripts/db/**]
+permissions:
+  contents: read
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+jobs:
+  drill-dev:
+    if: github.event_name != 'schedule' && (github.event_name == 'push' || inputs.dev_drill_first)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEV_REF: vajpmyzqyamnsvkrzxox
+      DEV_SUPABASE_URL: https://vajpmyzqyamnsvkrzxox.supabase.co
+      DEV_SUPABASE_KEY: sb_publishable_OGGSUG79WW9gBbqK9ea_Zg_qzg4D8uL
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: ติดตั้ง psql 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> $GITHUB_PATH
+      - name: เชื่อมต่อ Dev
+        env:
+          DEV_DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+        run: |
+          [ -n "$DEV_DB_PASSWORD" ] || { echo "::error::ยังไม่ได้ตั้ง secret DEV_DB_PASSWORD"; exit 1; }
+          ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$DEV_DB_PASSWORD")
+          echo "::add-mask::$ENC"
+          for H in aws-1-ap-southeast-1.pooler.supabase.com aws-0-ap-southeast-1.pooler.supabase.com; do
+            URL="postgresql://postgres.$DEV_REF:$ENC@$H:5432/postgres?sslmode=require"
+            psql "$URL" -Atc "select 1" >/dev/null 2>&1 && break; URL=""
+          done
+          [ -n "$URL" ] || { echo "::error::เชื่อมต่อ Dev ไม่ได้"; exit 1; }
+          case "$URL" in *kzxiifuapumtnjpwcrxt*) echo "::error::ไม่ใช่ Dev"; exit 1;; esac
+          # กันพลาด: Dev ต้องมีแต่บัญชีทดสอบ @example.com
+          REAL=$(psql "$URL" -Atc "select count(*) from auth.users where email not like '%@example.com'")
+          [ "$REAL" = 0 ] || { echo "::error::พบบัญชีที่ไม่ใช่บัญชีทดสอบบน Dev หยุดซ้อม"; exit 1; }
+          PASS=$(openssl rand -base64 32); echo "::add-mask::$PASS"
+          { echo "DB_URL=$URL"; echo "BACKUP_PASSPHRASE=$PASS"; } >> "$GITHUB_ENV"
+      - name: 1) สำรอง Dev แบบเข้ารหัส
+        run: scripts/db/backup.sh "$DB_URL" out
+      - name: 2) จด checksum ก่อนล้าง
+        run: psql "$DB_URL" -v ON_ERROR_STOP=1 -f scripts/db/checksums.sql > before.txt && grep -c '' before.txt
+      - name: 3) ล้างข้อมูลทุกตาราง public บน Dev
+        run: |
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -Atc "select 'truncate ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' cascade' from pg_tables where schemaname = 'public'" > truncate.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f truncate.sql
+          psql "$DB_URL" -Atc "select 'แถวที่เหลือใน households/events/expenses: ' || (select count(*) from households) || '/' || (select count(*) from events) || '/' || (select count(*) from expenses)"
+      - name: 4) กู้จากไฟล์ backup
+        run: scripts/db/restore.sh out/ban-rao-backup-*.gpg "$DB_URL" public-data
+      - name: 5) เทียบ checksum หลังกู้
+        run: |
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -f scripts/db/checksums.sql > after.txt
+          scripts/db/compare.sh before.txt after.txt | tee drill-report.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 6) ชุดทดสอบ RLS หลังกู้
+        env:
+          DEV_TEST_PASSWORD: ${{ secrets.DEV_TEST_PASSWORD }}
+        run: node --test --test-reporter=spec tests/rls/ 2>&1 | tee -a drill-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restore-drill-dev
+          path: drill-report.txt
+          retention-days: 30
+
+  backup:
+    needs: drill-dev
+    if: always() && (needs.drill-dev.result == 'success' || needs.drill-dev.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: ติดตั้ง psql 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> $GITHUB_PATH
+      - name: เตรียมการเชื่อมต่อ
+        env:
+          PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          DEV_DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ "$TARGET" = production ]; then REF=kzxiifuapumtnjpwcrxt; PW="$PROD_DB_PASSWORD"; else REF=vajpmyzqyamnsvkrzxox; PW="$DEV_DB_PASSWORD"; fi
+          [ -n "$PW" ] || { echo "::error::ยังไม่ได้ตั้ง secret รหัสผ่านฐานข้อมูลของ $TARGET"; exit 1; }
+          if [ "$TARGET" = production ] && [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::ยังไม่ได้ตั้ง BACKUP_PASSPHRASE"; exit 1; fi
+          PASS="$BACKUP_PASSPHRASE"
+          if [ -z "$PASS" ]; then PASS=$(openssl rand -base64 32); echo "Dev: ใช้รหัสเข้ารหัสชั่วคราวเฉพาะรอบนี้"; fi
+          echo "::add-mask::$PASS"
+          ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$PW")
+          echo "::add-mask::$ENC"
+          for H in aws-1-ap-southeast-1.pooler.supabase.com aws-0-ap-southeast-1.pooler.supabase.com; do
+            URL="postgresql://postgres.$REF:$ENC@$H:5432/postgres?sslmode=require"
+            if psql "$URL" -Atc "select 1" >/dev/null 2>&1; then echo "เชื่อมต่อ $TARGET ผ่าน $H"; break; fi
+            URL=""
+          done
+          [ -n "$URL" ] || { echo "::error::เชื่อมต่อฐาน $TARGET ไม่ได้"; exit 1; }
+          echo "::add-mask::$URL"
+          { echo "DB_URL=$URL"; echo "BACKUP_PASSPHRASE=$PASS"; } >> "$GITHUB_ENV"
+      - name: สำรองและเข้ารหัส
+        run: scripts/db/backup.sh "$DB_URL" out
+      - name: ทดสอบกู้คืนลงฐานชั่วคราว
+        run: |
+          mkdir -p /tmp/restore && cd /tmp/restore
+          supabase init --force >/dev/null
+          sed -i 's/^major_version = .*/major_version = 17/' supabase/config.toml
+          supabase start -x studio,imgproxy,mailpit,logflare,vector,edge-runtime,postgres-meta,realtime,supavisor,postgrest,kong >/dev/null
+          LOCAL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          cd "$GITHUB_WORKSPACE"
+          scripts/db/restore.sh out/ban-rao-backup-*.gpg "$LOCAL" full
+          psql "$LOCAL" -v ON_ERROR_STOP=1 -f scripts/db/checksums.sql > checksums-restored.txt
+          if [ "$TARGET" = production ]; then Q=quiet; else Q=; fi
+          scripts/db/compare.sh checksums-backup.txt checksums-restored.txt $Q | tee restore-report.txt
+          (cd /tmp/restore && supabase stop --no-backup >/dev/null)
+      - name: เก็บไฟล์ backup ที่เข้ารหัสแล้ว
+        if: env.TARGET == 'production'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ github.run_id }}
+          path: out/ban-rao-backup-*.gpg
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restore-report-${{ env.TARGET }}
+          path: restore-report.txt
+          retention-days: 30

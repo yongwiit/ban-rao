@@ -1,0 +1,62 @@
+# ตรวจทุกครั้งที่มีการเปลี่ยนโค้ด: lint, build และชุดทดสอบสิทธิ์ (RLS) บนโปรเจกต์ Dev
+# ไม่แตะ Production: ทั้ง build และชุดทดสอบชี้ไปที่ ban-rao-dev เท่านั้น
+name: CI
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  # ค่าสาธารณะของโปรเจกต์ Dev (ไม่ใช่ความลับ)
+  DEV_SUPABASE_URL: https://vajpmyzqyamnsvkrzxox.supabase.co
+  DEV_SUPABASE_KEY: sb_publishable_OGGSUG79WW9gBbqK9ea_Zg_qzg4D8uL
+jobs:
+  lint-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - name: Build (ชี้ Dev)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.DEV_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.DEV_SUPABASE_KEY }}
+      - name: ตรวจว่า build ไม่ได้ชี้ Production
+        run: |
+          if grep -rl "kzxiifuapumtnjpwcrxt" .next/static >/dev/null 2>&1; then
+            echo "::error::build นี้ยังมีที่อยู่ Production อยู่"; exit 1
+          fi
+          grep -rl "vajpmyzqyamnsvkrzxox" .next/static | head -1
+  rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: ชุดทดสอบ RLS (Dev)
+        env:
+          DEV_TEST_PASSWORD: ${{ secrets.DEV_TEST_PASSWORD }}
+        run: |
+          if [ -z "$DEV_TEST_PASSWORD" ]; then echo "::error::ยังไม่ได้ตั้ง secret DEV_TEST_PASSWORD"; exit 1; fi
+          node --test --test-reporter=spec tests/rls/ 2>&1 | tee rls-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rls-report
+          path: rls-report.txt
+          retention-days: 30
