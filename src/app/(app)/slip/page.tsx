@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ocrSlip, warmUpOcr } from "@/lib/slipOcr";
 import { ExpenseForm, type ExpenseDraft } from "@/components/ExpenseForm";
 import { BackIcon, UploadIcon } from "@/components/Icons";
 import { Bunny, Family } from "@/components/Mascots";
@@ -12,7 +13,7 @@ import type { SlipResult } from "@/app/api/slip/route";
 
 type Item = { key: string; preview: string; state: "reading" | "ready" | "saved" | "error"; draft?: ExpenseDraft; msg?: string };
 
-async function shrink(file: File): Promise<{ data: string; preview: string }> {
+async function shrink(file: File): Promise<{ data: string; preview: string; canvas: HTMLCanvasElement }> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
   const c = document.createElement("canvas");
@@ -20,7 +21,7 @@ async function shrink(file: File): Promise<{ data: string; preview: string }> {
   c.height = Math.round(bmp.height * scale);
   c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
   const url = c.toDataURL("image/jpeg", 0.85);
-  return { data: url.split(",")[1], preview: url };
+  return { data: url.split(",")[1], preview: url, canvas: c };
 }
 
 function toDraft(r: SlipResult, role: "dad" | "mom"): ExpenseDraft {
@@ -44,6 +45,7 @@ export default function SlipPage() {
   const { role } = useHousehold();
   const [items, setItems] = useState<Item[]>([]);
   const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { warmUpOcr(); }, []);
   const patch = (key: string, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
 
   async function onFiles(files: FileList | null) {
@@ -53,16 +55,27 @@ export default function SlipPage() {
     for (const f of Array.from(files)) {
       const key = crypto.randomUUID();
       try {
-        const { data, preview } = await shrink(f);
+        const { data, preview, canvas } = await shrink(f);
         setItems((xs) => [...xs, { key, preview, state: "reading" }]);
-        const res = await fetch("/api/slip", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-          body: JSON.stringify({ image: data, mediaType: "image/jpeg" }),
-        });
-        const body = await res.json();
-        if (!res.ok) { patch(key, { state: "error", msg: body.error, draft: toDraft({ is_slip: false, amount: null, datetime: null, recipient: null, bank: null, reference: null, category_guess: "other" }, role) }); continue; }
-        const r = body as SlipResult;
+        // 1) อ่านในเครื่องฟรีด้วย OCR
+        let r: SlipResult | null = null;
+        try {
+          const o = await ocrSlip(canvas);
+          if (o.amount) r = { ...o, is_slip: true, category_guess: o.category_guess as SlipResult["category_guess"] };
+        } catch (e) { console.warn("ocr failed", e); }
+        // 2) ถ้าอ่านยอดไม่ได้ ลองให้ AI อ่าน (ใช้ได้เมื่อเปิดคีย์ไว้)
+        if (!r) {
+          const res = await fetch("/api/slip", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+            body: JSON.stringify({ image: data, mediaType: "image/jpeg" }),
+          }).catch(() => null);
+          if (res?.ok) r = (await res.json()) as SlipResult;
+        }
+        if (!r) {
+          patch(key, { state: "error", msg: "อ่านยอดจากสลิปนี้ไม่ได้ กรอกเองด้านล่างได้เลยนะ", draft: toDraft({ is_slip: false, amount: null, datetime: null, recipient: null, bank: null, reference: null, category_guess: "other" }, role) });
+          continue;
+        }
         patch(key, { state: "ready", draft: toDraft(r, role), msg: r.is_slip ? undefined : "ภาพนี้อาจไม่ใช่สลิป ตรวจอีกทีนะ" });
       } catch {
         setItems((xs) => xs.some((x) => x.key === key) ? xs : [...xs, { key, preview: "", state: "error", msg: "เปิดไฟล์ภาพนี้ไม่ได้" }]);
@@ -107,7 +120,7 @@ export default function SlipPage() {
                 {it.preview && <img src={it.preview} alt="สลิปที่อัปโหลด" className="h-24 w-16 shrink-0 rounded-xl border border-line object-cover" />}
                 <div className="flex items-center gap-2 text-sm">
                   <Bunny size={36} happy={it.state === "ready"} />
-                  {it.state === "reading" ? "กำลังอ่านสลิปให้นะ…" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
+                  {it.state === "reading" ? "กำลังอ่านสลิปให้นะ… (ครั้งแรกอาจใช้เวลาสักครู่)" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
                 </div>
               </div>
               {it.draft && (
