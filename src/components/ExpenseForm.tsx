@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, PAID_FROM_KEYS, paidFromLabel, type Category, type PaidFrom } from "@/lib/family";
+import { PAID_FROM_KEYS, paidFromLabel, type Category, type PaidFrom } from "@/lib/family";
+import { CategoryPicker } from "./Categories";
 import { useHousehold } from "./Household";
-import { useLive } from "@/lib/useLive";
-import type { CategoryRow } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { LockIcon } from "./Icons";
 
@@ -39,19 +38,8 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
   const [d, setD] = useState<ExpenseDraft>(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const { household, people } = useHousehold();
-  const custom = useLive<CategoryRow>("expense_categories", household.id, () =>
-    supabase().from("expense_categories").select("id, name").order("created_at"));
-  const [newCat, setNewCat] = useState<string | null>(null);
-  async function addCategory() {
-    const name = (newCat ?? "").trim();
-    if (!name) return setNewCat(null);
-    const { error } = await supabase().from("expense_categories").insert({ name });
-    if (error && error.code !== "23505") return setErr(error.message);
-    setD((x) => ({ ...x, category: name }));
-    setNewCat(null);
-    custom.refresh();
-  }
+  const { people } = useHousehold();
+  const [paidTouched, setPaidTouched] = useState(false);
   const set = <K extends keyof ExpenseDraft>(k: K, v: ExpenseDraft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   async function save(e: React.FormEvent) {
@@ -92,32 +80,16 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
       </div>
       <label className="flex flex-col gap-1 text-sm font-medium">จ่ายให้ / ร้าน<input className="field" value={d.merchant} onChange={(e) => set("merchant", e.target.value)} /></label>
       {extra}
-      <fieldset>
-        <legend className="mb-1.5 text-sm font-medium">หมวด</legend>
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(CATEGORIES) as Category[]).map((c) => (
-            <button type="button" key={c} className="chip" aria-pressed={d.category === c} onClick={() => set("category", c)}>{CATEGORIES[c as keyof typeof CATEGORIES]}</button>
-          ))}
-          {custom.rows.map((c) => (
-            <button type="button" key={c.id} className="chip" aria-pressed={d.category === c.name} onClick={() => set("category", c.name)}>{c.name}</button>
-          ))}
-          {newCat === null ? (
-            <button type="button" className="chip border border-dashed border-line bg-white" onClick={() => setNewCat("")}>+ หมวดใหม่</button>
-          ) : (
-            <span className="flex w-full gap-2">
-              <label className="sr-only" htmlFor="newcat">ชื่อหมวดใหม่</label>
-              <input id="newcat" autoFocus className="field min-h-10 flex-1" maxLength={30} placeholder="เช่น ค่าเรียนพิเศษ" value={newCat}
-                onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCategory(); } }} />
-              <button type="button" className="btn-soft min-h-10 px-4" onClick={addCategory}>เพิ่ม</button>
-            </span>
-          )}
-        </div>
-      </fieldset>
+      <CategoryPicker value={d.category} onChange={(c) => setD((x) => ({
+        ...x, category: c.key,
+        // หมวดส่วนตัว → จ่ายส่วนตัว (ถ้ายังไม่ได้เลือกเอง)
+        paid_from: x.id || paidTouched ? x.paid_from : c.scope === "personal" ? "personal" : x.paid_from === "personal" ? "pot" : x.paid_from,
+      }))} />
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายจาก</legend>
         <div className="flex flex-wrap gap-1.5">
           {PAID_FROM_KEYS.map((p) => (
-            <button type="button" key={p} className="chip" aria-pressed={d.paid_from === p} onClick={() => set("paid_from", p)}>{paidFromLabel(p, people)}</button>
+            <button type="button" key={p} className="chip" aria-pressed={d.paid_from === p} onClick={() => { setPaidTouched(true); set("paid_from", p); }}>{paidFromLabel(p, people)}</button>
           ))}
         </div>
       </fieldset>

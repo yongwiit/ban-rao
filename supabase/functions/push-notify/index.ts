@@ -271,9 +271,26 @@ async function onCardNudge(id: string) {
   const what = owe != null
     ? `ฝากจ่ายค่า${c.title} ${bahtTh(owe)} บาท${months > 1 ? ` (ผ่อน ${months} เดือน เดือนละ ${bahtTh(owe / months)})` : ""}${c.bill_paid ? " · จ่ายแล้ว ขอบคุณนะ" : ""}`
     : `${c.title} ${bahtTh(Number(c.amount))} บาท${months > 1 ? ` ผ่อน ${months} เดือน` : ""}`;
+  const ask = c.bill_status === "pending" && c.bill_to === n.to_who
+    ? (c.bill_mode === "home" ? `ขอใส่${c.title} ${bahtTh(Number(c.amount))} บาท เข้าเงินบ้าน (หารในยอดเคลียร์) · แตะเพื่อยืนยัน` : `${what} · แตะเพื่อยืนยัน`)
+    : what;
   const sent = await send(to, "notify_money", {
-    title: `💳 ${by}ฝากบอกเรื่องบัตร${card?.name ? ` ${card.name}` : ""}`, body: what,
+    title: `💳 ${by}ฝากบอกเรื่องบัตร${card?.name ? ` ${card.name}` : ""}`, body: ask,
     url: kid ? "/" : "/money", tag: `card-${c.id}`,
+  });
+  return { sent };
+}
+
+/** อีกฝ่ายยืนยัน/ปฏิเสธการเรียกเก็บ → แจ้งคนที่จดรายการบัตร */
+async function onCardBillReply(chargeId: string, by: string, accept: boolean) {
+  const { data: c } = await db.from("card_charges").select("*").eq("id", chargeId).maybeSingle();
+  if (!c || !(await once(`billreply:${chargeId}:${c.bill_status}`))) return { sent: 0 };
+  const { data: m } = await db.from("members").select("role").eq("user_id", by).maybeSingle();
+  const name = m ? (await names(c.household_id))[m.role] ?? "คนในบ้าน" : "คนในบ้าน";
+  const sent = await send([c.created_by], "notify_money", {
+    title: accept ? `✅ ${name}ยืนยัน${c.title}แล้ว` : `↩️ ${name}ยังไม่รับ${c.title}`,
+    body: accept ? (c.bill_mode === "home" ? `ใส่ ${bahtTh(Number(c.amount))} บาท ในเงินบ้านแล้ว หารในยอดเคลียร์` : `บันทึก ${bahtTh(Number(c.bill_amount ?? c.amount))} บาท ในรายจ่ายของ${name}แล้ว`) : "แตะเพื่อดูหรือแก้รายการ",
+    url: "/money", tag: `card-${c.id}`,
   });
   return { sent };
 }
@@ -341,6 +358,7 @@ Deno.serve(async (req) => {
     else if (body.type === "expense" && typeof body.expense_id === "string") out = await onExpense(body.expense_id);
     else if (body.type === "note" && typeof body.note_id === "string") out = await onNote(body.note_id);
     else if (body.type === "card_nudge" && typeof body.nudge_id === "string") out = await onCardNudge(body.nudge_id);
+    else if (body.type === "card_bill_reply" && typeof body.charge_id === "string" && typeof body.by === "string") out = await onCardBillReply(body.charge_id, body.by, body.accept === true);
     else if (body.type === "heart" && typeof body.heart_id === "string") out = await onHeart(body.heart_id);
     else if (body.type === "star" && typeof body.log_id === "string") out = await onStar(body.log_id);
     else if (body.type === "test" && typeof body.endpoint === "string") out = await onTest(body.endpoint);

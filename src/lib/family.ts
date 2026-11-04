@@ -48,18 +48,29 @@ export function paidFromLabel(p: PaidFrom, people: People): string {
 export const PAID_FROM_KEYS: PaidFrom[] = ["pot", "dad", "mom", "personal"];
 
 export const CATEGORIES = {
-  home: "ของใช้ในบ้าน",
   food: "อาหาร",
+  shop: "ช้อปปิ้ง",
+  travel: "เดินทาง",
+  home: "ของใช้ในบ้าน",
   pearl: "ของลูก",
   bill: "บิล",
   water: "ค่าน้ำ",
   power: "ค่าไฟ",
   net: "ค่าเน็ต",
   phone: "ค่าโทรศัพท์",
-  car: "รถ",
+  save: "ออม",
+  merit: "ทำบุญ",
+  invest: "ลงทุน",
+  health: "สุขภาพ",
+  fun: "บันเทิง/subscription",
   gift: "ของขวัญ",
+  car: "รถ",
+  pet: "สัตว์เลี้ยง",
+  study: "การศึกษา",
   other: "อื่นๆ",
 } as const;
+/** หมวดตั้งต้นที่ถือเป็นค่าใช้จ่ายส่วนตัว (ที่เหลือเป็นของบ้าน) */
+export const PERSONAL_CATEGORIES = new Set(["shop", "travel", "phone", "save", "merit", "invest", "health", "fun", "gift", "car"]);
 /** หมวดตั้งต้น (key) หรือชื่อหมวดที่บ้านสร้างเอง */
 export type Category = string;
 export function categoryLabel(c: string): string {

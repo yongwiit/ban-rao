@@ -9,7 +9,14 @@ export type ChargeRow = {
   id: string; card_id: string; title: string; amount: number; charged_on: string; months: number;
   category: string | null; bill_to: string | null; bill_amount: number | null; bill_paid: boolean;
   note: string | null; created_by: string; created_at: string;
+  /** subscription: none = ครั้งเดียว */
+  repeat?: "none" | "monthly" | "yearly"; ended_on?: string | null;
+  /** home = เข้าเงินบ้าน (หารในยอดเคลียร์), person = เก็บจากคนนั้น */
+  bill_mode?: "home" | "person"; bill_status?: "none" | "pending" | "accepted" | "rejected";
 };
+export const isSub = (c: Pick<ChargeRow, "repeat">) => !!c.repeat && c.repeat !== "none";
+/** subscription ที่ยังใช้อยู่ ณ วันนี้ */
+export const activeSub = (c: ChargeRow, today: string) => isSub(c) && c.charged_on <= today && (!c.ended_on || c.ended_on >= today);
 export type IncomeRow = { id: string; who: string; label: string; amount: number; private: boolean; created_by: string };
 
 /** เดือนเป็นเลขลำดับ (ปี*12 + เดือน 0-11) เพื่อเทียบรอบง่ายๆ */
@@ -40,12 +47,20 @@ function firstStatement(card: Pick<CardRow, "statement_day">, chargedOn: string)
 /** ยอดของรายการนี้ที่อยู่ในบิลรอบ i (จ่ายเต็ม = งวดเดียว, ผ่อน = หารเท่ากัน) */
 function amountOn(card: CardRow, c: ChargeRow, i: Mi): number {
   const k = i - firstStatement(card, c.charged_on);
+  if (isSub(c)) {
+    if (k < 0 || (c.repeat === "yearly" && k % 12 !== 0)) return 0;
+    // รอบที่ k ตรงกับวันที่รูดเดือนที่ k (ยกเลิกแล้วไม่นับรอบหลังวันที่ยกเลิก)
+    const { y, m, d } = parse(c.charged_on);
+    const occ = ymdOf(dateOf(mi(y, m) + k, d));
+    return c.ended_on && occ > c.ended_on ? 0 : Number(c.amount);
+  }
   return k >= 0 && k < c.months ? Number(c.amount) / c.months : 0;
 }
 
 /** สถานะงวดผ่อน: จ่ายไปแล้วกี่งวด (นับงวดที่เลยวันครบกำหนดแล้ว) เหลือกี่งวด */
 export function installment(card: CardRow, c: ChargeRow, today: string) {
   const first = firstStatement(card, c.charged_on);
+  if (isSub(c)) return { paid: 0, left: 0, perMonth: Number(c.amount), done: !!c.ended_on && c.ended_on < today, lastDue: dueOfStatement(card, first) };
   let paid = 0;
   for (let k = 0; k < c.months; k++) if (ymdOf(dueOfStatement(card, first + k)) < today) paid++;
   const perMonth = Number(c.amount) / c.months;
@@ -67,6 +82,7 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
     ? { statement: dateOf(prev, card.statement_day), due: prevDue, amount: sum(prev), closed: true }
     : { statement: dateOf(open, card.statement_day), due: dueOfStatement(card, open), amount: sum(open), closed: false };
   const cycleCharges = charges.filter((c) => amountOn(card, c, open) > 0);
+  const subs = charges.filter((c) => activeSub(c, today));
   const installments = charges.filter((c) => c.months > 1 && !installment(card, c, today).done);
   const owedLeft = installments.reduce((s, c) => { const st = installment(card, c, today); return s + st.perMonth * st.left; }, 0);
   return {
@@ -76,6 +92,13 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
     cycleCharges,
     bill,
     installments,
+    subs,
+    /** ยอดที่ยังไม่ได้จ่าย: บิลที่ตัดแล้วแต่ยังไม่ถึงวันจ่าย + รอบนี้ + งวดผ่อนที่เหลือหลังจากนี้ */
+    outstanding: (billOpen ? sum(prev) : 0) + sum(open) + charges.filter((c) => !isSub(c)).reduce((s, c) => {
+      let t = 0;
+      for (let i = open + 1; i < open + 61; i++) t += amountOn(card, c, i);
+      return s + t;
+    }, 0),
     /** ผ่อนต่อเดือนรวม (งวดที่ยังเหลือ) */
     monthlyInstallments: installments.reduce((s, c) => s + Number(c.amount) / c.months, 0),
     /** ยอดผ่อนที่ยังค้าง (ไม่รวมรอบนี้ที่จ่ายเต็ม) */

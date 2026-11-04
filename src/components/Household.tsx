@@ -18,6 +18,7 @@ export type HouseholdRow = {
   monthly_budget: number;
   budget_enabled: boolean;
   hidden_tabs: string[];
+  hidden_categories: string[];
 };
 
 type Ctx = {
@@ -69,14 +70,14 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       return;
     }
     const [{ data: hh }, { count }] = await Promise.all([
-      db.from("households").select("id, name, join_code, monthly_budget, budget_enabled, hidden_tabs").eq("id", me.household_id).single(),
+      db.from("households").select("id, name, join_code, monthly_budget, budget_enabled, hidden_tabs, hidden_categories").eq("id", me.household_id).single(),
       db.from("members").select("user_id", { count: "exact", head: true }).eq("household_id", me.household_id).in("role", ["dad", "mom"]),
       loadPeople(me.household_id),
     ]);
     if (hh) {
       setMember({
         role: me.role as MemberRole,
-        household: { ...hh, monthly_budget: Number(hh.monthly_budget), hidden_tabs: hh.hidden_tabs ?? [] },
+        household: { ...hh, monthly_budget: Number(hh.monthly_budget), hidden_tabs: hh.hidden_tabs ?? [], hidden_categories: hh.hidden_categories ?? [] },
         partnerJoined: (count ?? 0) >= 2,
         tourDone: !!me.tour_done,
       });
