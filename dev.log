@@ -1,12 +1,11 @@
 ▲ Next.js 16.4.5 (Turbopack)
 - Local:         http://localhost:3123
 - Network:       http://192.0.2.2:3123
-✓ Ready in 807ms
-✓ Running next.config.ts took 201ms
-⚠ Slow filesystem detected. The benchmark took 224ms. If /home/claude/ban-rao/.next/dev is a network drive, consider moving it to a local folder.
-See more: https://nextjs.org/docs/app/guides/local-development
+✓ Ready in 583ms
+✓ Running next.config.ts took 137ms
 - Cache Components enabled
 - Partial Prefetching enabled
 
 Route /money is rendering with server caches disabled. For this navigation, Component Metadata in React DevTools will not accurately reflect what is statically prerenderable and runtime prefetchable. See more info here: https://nextjs.org/docs/messages/cache-bypass-in-dev
- GET /money 200 in 744ms (next.js: 385ms, application-code: 359ms)
+ GET /money 200 in 834ms (next.js: 427ms, application-code: 408ms)
+ GET /money 200 in 59ms (next.js: 1.7ms, application-code: 57ms)

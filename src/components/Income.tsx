@@ -5,6 +5,7 @@ import { useHousehold } from "./Household";
 import { Sheet } from "./Sheet";
 import { LockIcon } from "./Icons";
 import { useCards } from "./CreditCards";
+import { useCollapsed } from "./Reorder";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
@@ -118,10 +119,19 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
   const seg = (v: number) => `${Math.min(100, base > 0 ? (v / base) * 100 : 0)}%`;
   const [showAll, setShowAll] = useState(false);
+  const collapsed = useCollapsed(scope);
 
   return (
     <section className={`card flex flex-col gap-2.5 ${scope === "home" ? "bg-peach" : "bg-lavender"}`}>
       {header}
+      {collapsed.has("month") ? (
+        <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded={false} className="flex items-center gap-2 text-left">
+          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+          <span className={`font-display text-xl font-bold ${base > 0 && left < 0 ? "text-rose" : ""}`}>{baht(base === 0 ? used : Math.abs(left))} บาท</span>
+          {reserve > 0 && <span className="text-xs font-semibold text-rose">ค้าง {baht(reserve)}</span>}
+          <span className="text-muted" aria-hidden>▾</span>
+        </button>
+      ) : <>
       {base === 0 ? (
         <>
           <span className="font-display text-[30px] font-bold">{baht(used)} <span className="text-base font-medium">บาท ใช้ไปแล้ว</span></span>
@@ -148,7 +158,7 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
             <button onClick={useBudget ? onBudget : () => setOpen(true)} className="flex justify-between text-left">
               <span>{useBudget ? "งบเดือนนี้" : scope === "home" ? "รายได้บ้าน" : "รายได้ของฉัน"} <span className="text-xs text-muted underline">{useBudget ? "ปรับงบ" : "แก้"}</span></span><span>{baht(base)}</span>
             </button>
-            <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว{cardPaid > 0 || sharePaid > 0 ? ` (รวม${[cardPaid > 0 ? "บิลบัตรที่จ่ายแล้ว" : "", sharePaid > 0 ? "ส่วนของฉันในรายจ่ายบ้าน" : ""].filter(Boolean).join(" + ")})` : ""}</span><span>− {baht(used)} · {pct(used, base)}%</span></span>
+            <span className="flex justify-between"><span className="flex flex-col"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว</span>{(cardPaid > 0 || sharePaid > 0) && <span className="pl-4 text-xs text-muted">รวม{[cardPaid > 0 ? `บิลบัตร ${baht(cardPaid)}` : "", sharePaid > 0 ? `ส่วนของฉันในบ้าน ${baht(sharePaid)}` : ""].filter(Boolean).join(" · ")}</span>}</span><span className="shrink-0">− {baht(used)} · {pct(used, base)}%</span></span>
             {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ยังต้องจ่าย</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
             {refund > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-mint" />ได้คืน (รูดบัตรแล้วเรียกเก็บคนในบ้าน)</span><span>+ {baht(refund)}</span></span>}
           </div>
@@ -184,6 +194,8 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
         </div>
       )}
       {scope === "mine" && <span className="text-xs text-muted">นับเฉพาะของคุณ: รายการ &quot;จ่ายส่วนตัว&quot;/&quot;เห็นคนเดียว&quot; บิลบัตรของคุณ ค่าใช้จ่ายประจำส่วนตัว และส่วนของคุณในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน</span>}
+      <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded className="-mb-1 min-h-8 self-end text-xs text-muted">ซ่อนกล่องนี้ ▴</button>
+      </>}
       <Sheet open={open} onClose={() => setOpen(false)} title="รายได้ต่อเดือน">
         {open && <IncomeEditor rows={incomes.rows} people={people.list.filter((p) => !p.kid)} onChange={incomes.refresh} />}
       </Sheet>
