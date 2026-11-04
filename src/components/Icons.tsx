@@ -14,4 +14,5 @@ export const CheckIcon = ({ size = 16, className }: P) => (<svg {...base(size)} 
 export const BackIcon = ({ size = 20, className }: P) => (<svg {...base(size)} className={className}><path d="M15 5l-7 7 7 7" /></svg>);
 export const ChatIcon = ({ size = 16, className }: P) => (<svg {...base(size)} className={className}><path d="M4 5h16v11H9l-5 4z" /></svg>);
 export const TrashIcon = ({ size = 16, className }: P) => (<svg {...base(size)} className={className}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>);
+export const EditIcon = ({ size = 16, className }: P) => (<svg {...base(size)} className={className}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13 7l4 4" /></svg>);
 export const ChevronIcon = ({ size = 18, dir = "right", className }: P & { dir?: "left" | "right" }) => (<svg {...base(size)} className={className}><path d={dir === "right" ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7"} /></svg>);

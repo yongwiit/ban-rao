@@ -4,9 +4,14 @@ import { useMemo, useState } from "react";
 import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear } from "@/components/Mascots";
-import { ChatIcon, ChevronIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
+import { ChatIcon, ChevronIcon, EditIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
 import { PEOPLE, type Who } from "@/lib/family";
 import { dayKey, monthRange, thaiDate } from "@/lib/format";
+
+/** HH:mm ตามเวลาไทย สำหรับช่อง input type=time */
+function thaiTime24(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
+}
 import { eventDays, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
@@ -22,6 +27,7 @@ export default function CalendarPage() {
   const [sel, setSel] = useState(dayKey(now));
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EventRow | null>(null);
   const { start, end } = monthRange(ym.y, ym.m);
 
   const events = useLive<EventRow>("events", household.id, () =>
@@ -92,16 +98,17 @@ export default function CalendarPage() {
           <div className="flex items-center gap-3 rounded-[20px] bg-white p-4 text-sm text-muted"><Bear size={36} />ว่าง ไม่มีนัด</div>
         )}
         {selected.map((e) => (
-          <EventCard key={e.id} e={e} day={sel} mine={e.created_by === userId} open={openId === e.id} onToggle={() => setOpenId(openId === e.id ? null : e.id)} householdId={household.id} />
+          <EventCard key={e.id} e={e} day={sel} mine={e.created_by === userId} open={openId === e.id} onToggle={() => setOpenId(openId === e.id ? null : e.id)} onEdit={() => setEditing(e)} householdId={household.id} />
         ))}
       </section>
 
       <AddEvent open={adding} onClose={() => setAdding(false)} day={sel} />
+      {editing && <AddEvent key={editing.id} open onClose={() => setEditing(null)} day={sel} editing={editing} mine={editing.created_by === userId} />}
     </div>
   );
 }
 
-function EventCard({ e, day, mine, open, onToggle, householdId }: { e: EventRow; day: string; mine: boolean; open: boolean; onToggle: () => void; householdId: string }) {
+function EventCard({ e, day, mine, open, onToggle, onEdit, householdId }: { e: EventRow; day: string; mine: boolean; open: boolean; onToggle: () => void; onEdit: () => void; householdId: string }) {
   const comments = useLive<CommentRow>("event_comments", householdId, () =>
     supabase().from("event_comments").select("*").eq("event_id", e.id).order("created_at"), [e.id]);
   const [text, setText] = useState("");
@@ -134,27 +141,31 @@ function EventCard({ e, day, mine, open, onToggle, householdId }: { e: EventRow;
             <input id={`c-${e.id}`} className="field min-h-11" placeholder="เช่น ใครไปรับ?" value={text} onChange={(ev) => setText(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && send()} />
             <button className="btn-soft" onClick={send}>ส่ง</button>
           </div>
-          {mine && <button onClick={remove} className="flex min-h-11 items-center gap-1 self-end text-sm text-rose"><TrashIcon />ลบนัด</button>}
+          <div className="flex justify-end gap-4">
+            <button onClick={onEdit} className="flex min-h-11 items-center gap-1 text-sm"><EditIcon />แก้ไขนัด</button>
+            {mine && <button onClick={remove} className="flex min-h-11 items-center gap-1 text-sm text-rose"><TrashIcon />ลบนัด</button>}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; day: string }) {
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState(day);
-  const [time, setTime] = useState("09:00");
-  const [allDay, setAllDay] = useState(false);
-  const [multi, setMulti] = useState(false);
-  const [endDate, setEndDate] = useState(day);
-  const [who, setWho] = useState<Who>("all");
-  const [note, setNote] = useState("");
-  const [priv, setPriv] = useState(false);
+function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean; onClose: () => void; day: string; editing?: EventRow; mine?: boolean }) {
+  const multiInit = editing ? isMultiDay(editing) : false;
+  const [title, setTitle] = useState(editing?.title ?? "");
+  const [date, setDate] = useState(editing ? dayKey(editing.starts_at) : day);
+  const [time, setTime] = useState(editing && !editing.all_day ? thaiTime24(editing.starts_at) : "09:00");
+  const [allDay, setAllDay] = useState(editing ? editing.all_day && !multiInit : false);
+  const [multi, setMulti] = useState(multiInit);
+  const [endDate, setEndDate] = useState(editing?.ends_at ? dayKey(editing.ends_at) : editing ? dayKey(editing.starts_at) : day);
+  const [who, setWho] = useState<Who>(editing?.who ?? "all");
+  const [note, setNote] = useState(editing?.note ?? "");
+  const [priv, setPriv] = useState(editing?.private ?? false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastDay, setLastDay] = useState(day);
-  if (day !== lastDay) { setLastDay(day); setDate(day); setEndDate(day); }
+  if (!editing && day !== lastDay) { setLastDay(day); setDate(day); setEndDate(day); }
 
   async function save(ev: React.FormEvent) {
     ev.preventDefault();
@@ -163,7 +174,10 @@ function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; 
     const isAllDay = allDay || multi;
     const starts_at = new Date(`${date}T${isAllDay ? "00:00" : time}:00+07:00`).toISOString();
     const ends_at = multi ? new Date(`${endDate}T23:59:00+07:00`).toISOString() : null;
-    const { error } = await supabase().from("events").insert({ title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv });
+    const row = { title: title.trim(), starts_at, ends_at, all_day: isAllDay, who, note: note.trim() || null, private: priv };
+    const { error } = editing
+      ? await supabase().from("events").update(row).eq("id", editing.id)
+      : await supabase().from("events").insert(row);
     setBusy(false);
     if (error) return setErr(error.message);
     setTitle(""); setNote(""); setPriv(false); setMulti(false); setErr(null);
@@ -171,7 +185,7 @@ function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; 
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="เพิ่มนัด">
+    <Sheet open={open} onClose={onClose} title={editing ? "แก้ไขนัด" : "เพิ่มนัด"}>
       <form onSubmit={save} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm font-medium">ชื่อนัด<input className="field" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น หมอฟันน้องเพิร์ล" /></label>
         <div className="flex gap-2">
@@ -199,9 +213,9 @@ function AddEvent({ open, onClose, day }: { open: boolean; onClose: () => void; 
           </div>
         </fieldset>
         <label className="flex flex-col gap-1 text-sm font-medium">โน้ต<input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ไม่ใส่ก็ได้" /></label>
-        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} /><LockIcon />เห็นคนเดียว (เช่น เซอร์ไพรส์ วันครบรอบ)</label>
+        {mine && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} /><LockIcon />เห็นคนเดียว (เช่น เซอร์ไพรส์ วันครบรอบ)</label>}
         {err && <p role="alert" className="text-sm text-rose">{err}</p>}
-        <button className="btn-dark" disabled={busy}>บันทึกนัด</button>
+        <button className="btn-dark" disabled={busy}>{editing ? "บันทึกการแก้ไข" : "บันทึกนัด"}</button>
       </form>
     </Sheet>
   );
