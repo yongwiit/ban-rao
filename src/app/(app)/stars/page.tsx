@@ -31,6 +31,10 @@ export default function StarsPage() {
   const [edit, setEdit] = useState<{ type: "task" | "reward"; row: StarTask | StarReward | null } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [delId, setDelId] = useState<string | null>(null);
+  const [clearAsk, setClearAsk] = useState(false);
+  const now = new Date();
+  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
 
   const balance = kid ? balanceOf(logs.rows, kid) : 0;
   const myLogs = logs.rows.filter((l) => l.kid === kid);
@@ -71,6 +75,40 @@ export default function StarsPage() {
     if (error) return setMsg(error.message.includes("ดาวไม่พอ") ? "ดาวไม่พอแล้ว" : "บันทึกไม่ได้");
     if (ok) { play(l.kind === "earn" ? "star" : "tada"); confetti({ emoji: l.emoji }); }
   }
+
+  async function removeLog(id: string) {
+    setBusy(id);
+    const { error } = await supabase().from("star_log").delete().eq("id", id);
+    setBusy(null);
+    setDelId(null);
+    setMsg(error ? "ลบไม่ได้ ลองใหม่อีกครั้ง" : "ลบรายการแล้ว");
+  }
+  async function clearAll() {
+    if (!kid || !me) return;
+    setBusy("clear");
+    const { error } = await supabase().from("star_log").delete().eq("household_id", hid).eq("kid", kid);
+    setBusy(null);
+    setClearAsk(false);
+    setMsg(error ? "ล้างไม่ได้ ลองใหม่อีกครั้ง" : `ล้างประวัติของ${me.name}แล้ว เริ่มนับใหม่ 0 ดาว`);
+  }
+
+  // สรุปรายเดือน (เวลาไทย)
+  const mKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
+  const key = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
+  const counted = myLogs.filter((l) => l.status === "approved" || (l.kind === "redeem" && l.status === "pending"));
+  const inMonth = counted.filter((l) => mKey(l.created_at) === key);
+  const earnedMonth = inMonth.filter((l) => l.kind === "earn").reduce((a, l) => a + l.stars, 0);
+  const redeemedMonth = inMonth.filter((l) => l.kind === "redeem");
+  const usedMonth = -redeemedMonth.reduce((a, l) => a + l.stars, 0);
+  const earnedAll = counted.filter((l) => l.kind === "earn").reduce((a, l) => a + l.stars, 0);
+  const usedAll = -counted.filter((l) => l.kind === "redeem").reduce((a, l) => a + l.stars, 0);
+  const months6 = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return { y: d.getFullYear(), m: d.getMonth(), k, label: d.toLocaleDateString("th-TH", { month: "short" }), v: counted.filter((l) => l.kind === "earn" && mKey(l.created_at) === k).reduce((a, l) => a + l.stars, 0) };
+  });
+  const maxM = Math.max(1, ...months6.map((x) => x.v));
+  function shift(n: number) { const d = new Date(ym.y, ym.m + n, 1); setYm({ y: d.getFullYear(), m: d.getMonth() }); }
 
   if (!kids.length) {
     return (
@@ -193,15 +231,68 @@ export default function StarsPage() {
         })}
       </section>
 
+      <section className="card flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold">สรุปดาว</h2>
+          <div className="flex items-center gap-1 text-sm">
+            <button aria-label="เดือนก่อน" className="size-9 rounded-full bg-sand" onClick={() => shift(-1)}>‹</button>
+            <span className="min-w-20 text-center">{new Date(ym.y, ym.m, 15).toLocaleDateString("th-TH", { month: "short", year: "2-digit" })}</span>
+            <button aria-label="เดือนถัดไป" className="size-9 rounded-full bg-sand" onClick={() => shift(1)}>›</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-2xl bg-mint p-2"><p className="font-display text-2xl font-bold">+{earnedMonth}</p><p className="text-xs">ได้เดือนนี้</p></div>
+          <div className="rounded-2xl bg-lavender p-2"><p className="font-display text-2xl font-bold">−{usedMonth}</p><p className="text-xs">แลกเดือนนี้</p></div>
+          <div className="rounded-2xl bg-[#FBE9B8] p-2"><p className="font-display text-2xl font-bold">{balance}</p><p className="text-xs">คงเหลือตอนนี้</p></div>
+        </div>
+        <div className="flex h-20 items-end gap-2" aria-label="ดาวที่ได้ 6 เดือนล่าสุด">
+          {months6.map((x) => (
+            <button key={x.k} onClick={() => setYm({ y: x.y, m: x.m })} className="flex flex-1 flex-col items-center justify-end gap-1 self-stretch">
+              <span className="text-[10px] text-muted">{x.v || ""}</span>
+              <span className={`w-full rounded-t-md ${x.k === key ? "bg-[#F2C94C]" : "bg-[#F6E3A6]"}`} style={{ height: `${Math.max(4, (x.v / maxM) * 52)}px` }} />
+              <span className={`text-[11px] ${x.k === key ? "font-semibold" : "text-muted"}`}>{x.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <p className="font-semibold">แลกอะไรไปบ้างเดือนนี้</p>
+          {redeemedMonth.length === 0 ? <p className="text-muted">ยังไม่ได้แลก</p> : redeemedMonth.map((l) => (
+            <p key={l.id} className="flex justify-between"><span>{l.emoji} {l.title}{l.status === "pending" ? " (รออนุมัติ)" : ""} · {thaiDate(l.created_at, { day: "numeric", month: "short" })}</span><span className="text-rose">{l.stars}</span></p>
+          ))}
+        </div>
+        <p className="border-t border-dashed border-line pt-2 text-xs text-muted">ตั้งแต่เริ่ม ได้ทั้งหมด {earnedAll} ดาว · แลกไป {usedAll} ดาว · เหลือ {balance} ดาว</p>
+      </section>
+
       <section className="card flex flex-col gap-1.5">
         <h2 className="font-display text-lg font-semibold">ประวัติดาว</h2>
+        {isParent && myLogs.length > 0 && <p className="text-xs text-muted">แตะรายการเพื่อลบ (เช่น กดผิดหรือทดสอบ)</p>}
         {myLogs.length === 0 && <p className="text-sm text-muted">ยังไม่มี</p>}
-        {myLogs.slice(0, 30).map((l) => (
-          <div key={l.id} className={`flex items-center gap-2 text-sm ${l.status === "rejected" ? "opacity-50" : ""}`}>
+        {myLogs.slice(0, 60).map((l) => (
+          <div key={l.id} className="flex flex-col">
+          <button disabled={!isParent} onClick={() => setDelId(delId === l.id ? null : l.id)} className={`flex min-h-8 items-center gap-2 text-left text-sm ${l.status === "rejected" ? "opacity-50" : ""}`}>
             <span>{l.emoji}</span>
             <span className="flex-1">{l.kind === "redeem" ? `แลก ${l.title}` : l.title}<span className="text-xs text-muted"> · {thaiDate(l.created_at, { day: "numeric", month: "short" })} {thaiTime(l.created_at)}{l.status === "pending" ? " · รออนุมัติ" : l.status === "rejected" ? " · ไม่ได้อนุมัติ" : ""}</span></span>
             <span className={`font-semibold ${l.stars > 0 ? "text-[#3F8F63]" : "text-rose"}`}>{l.stars > 0 ? `+${l.stars}` : l.stars}</span>
+          </button>
+          {delId === l.id && (
+            <div className="mb-1 flex items-center justify-end gap-2 rounded-xl bg-sand px-2 py-1.5 text-xs">
+              <span className="flex-1">ลบแล้วดาวจะ{l.stars > 0 ? "ลด" : "คืน"} {Math.abs(l.stars)} ดวง</span>
+              <button className="min-h-9 rounded-full bg-white px-3" onClick={() => setDelId(null)}>ไม่ลบ</button>
+              <button className="min-h-9 rounded-full bg-cocoa px-3 font-semibold text-cream" disabled={busy === l.id} onClick={() => removeLog(l.id)}>ลบ</button>
+            </div>
+          )}
           </div>
+        ))}
+        {isParent && myLogs.length > 0 && me && (clearAsk ? (
+          <div className="mt-2 flex flex-col gap-2 rounded-2xl bg-[#FBDCE4] p-3 text-sm">
+            <p>ล้างประวัติทั้งหมดของ{me.name}? ดาวจะกลับเป็น 0 และย้อนคืนไม่ได้</p>
+            <div className="flex gap-2">
+              <button className="btn-soft flex-1" onClick={() => setClearAsk(false)}>ไม่ล้าง</button>
+              <button className="btn-dark flex-1" disabled={busy === "clear"} onClick={clearAll}>ล้างเลย</button>
+            </div>
+          </div>
+        ) : (
+          <button className="mt-1 min-h-11 text-sm text-rose underline" onClick={() => setClearAsk(true)}>ล้างประวัติทั้งหมด (เริ่มใหม่ 0 ดาว)</button>
         ))}
       </section>
 
