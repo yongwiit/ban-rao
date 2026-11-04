@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.118.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tha": "^1.0.0",
+    "ical.js": "^2.1.0",
     "jsqr": "^1.4.0",
     "next": "16.4.5",
     "react": "19.3.0",

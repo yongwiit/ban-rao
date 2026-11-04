@@ -6,6 +6,7 @@ import { InviteButtons } from "@/components/InviteButtons";
 import { LineLink } from "@/components/LineLink";
 import { CalendarLink } from "@/components/CalendarLink";
 import { PushSetup } from "@/components/PushSetup";
+import { GoogleImport } from "@/components/GoogleImport";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
 import { baht } from "@/lib/format";
@@ -36,6 +37,8 @@ export default function SettingsPage() {
       <LineLink />
 
       <CalendarLink />
+
+      <GoogleImport />
 
       <Link href="/money" className="card flex items-center gap-3 text-sm">
         <span className="flex size-9 items-center justify-center rounded-xl bg-mint"><WalletIcon size={18} /></span>
