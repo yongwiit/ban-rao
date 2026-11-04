@@ -53,6 +53,9 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
         const cat = cats.get(b.category ?? "bill");
         const rec = monthRows.find((e) => e.bill_id === b.id);
         const dueToday = b.due_day != null && isThisMonth && now.getDate() >= b.due_day;
+        // ตั้งจดอัตโนมัติหลังวันครบของเดือนนี้ → ระบบเริ่มจดเดือนหน้า เดือนนี้ให้กดจดเอง
+        const dueKey = b.due_day != null ? dayKey(new Date(now.getFullYear(), now.getMonth(), Math.min(b.due_day, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()))) : "";
+        const missed = !!(b.auto_record && b.auto_from && dueKey && dueKey < b.auto_from);
         const last = b.variable ? prevOf(b.id) : 0;
         const diff = rec && last ? Number(rec.amount) - last : 0;
         return (
@@ -70,7 +73,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
             </button>
             {b.period === "monthly" && isThisMonth && (rec
               ? <span className="shrink-0 rounded-lg bg-mint px-2 py-1 text-xs">✓ {baht(Number(rec.amount))}</span>
-              : b.auto_record && !b.variable
+              : b.auto_record && !b.variable && !missed
                 ? <span className="shrink-0 text-xs text-muted">{dueToday ? "กำลังจด…" : `จดให้วันที่ ${b.due_day}`}</span>
                 : <button className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${dueToday || b.variable ? "bg-butter" : "bg-sand"}`}
                     onClick={() => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(now), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id })}>
