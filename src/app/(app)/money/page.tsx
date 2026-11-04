@@ -177,7 +177,7 @@ export default function MoneyPage() {
           <button onClick={() => setEditing({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category: scope === "home" ? "home" : "other", paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" })} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
         </div>
         {month.rows.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
-        {month.rows.filter((e) => scope === "home" || mineOnly(e)).map((e) => (
+        {month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e))).map((e) => (
           <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{categoryLabel(e.category).slice(0, 2)}</span>}</span>
             <span className="flex min-w-0 flex-1 flex-col">
