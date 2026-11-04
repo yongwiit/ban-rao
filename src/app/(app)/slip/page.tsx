@@ -131,7 +131,7 @@ export default function SlipPage() {
                   initial={it.draft}
                   submitLabel="ยืนยันบันทึก"
                   onSaved={() => patch(it.key, { state: "saved" })}
-                  extra={it.draft.slip_ref ? <p className="text-xs text-muted">{it.draft.bank} · อ้างอิง …{it.draft.slip_ref.slice(-6)}</p> : null}
+                  extra={it.draft.slip_ref ? <p className="text-xs text-muted">{it.draft.bank ? `${it.draft.bank} · ` : ""}อ้างอิง …{it.draft.slip_ref.slice(-6)}</p> : null}
                 />
               )}
             </section>
