@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   if (!token) return Response.json({ error: "ยังไม่ได้ล็อกอิน" }, { status: 401 });
   const { data: user } = await createClient(url, anon).auth.getUser(token);
   if (!user.user) return Response.json({ error: "ยังไม่ได้ล็อกอิน" }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "ยังไม่ได้ตั้ง ANTHROPIC_API_KEY" }, { status: 500 });
+  if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "ยังไม่ได้เปิดระบบอ่านสลิป กรอกยอดเองด้านล่างได้เลยนะ" }, { status: 500 });
 
   const { image, mediaType } = (await req.json()) as { image?: string; mediaType?: string };
   if (!image || image.length > 7_000_000) return Response.json({ error: "ไฟล์ภาพไม่ถูกต้องหรือใหญ่เกินไป" }, { status: 400 });

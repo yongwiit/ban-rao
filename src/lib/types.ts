@@ -7,6 +7,7 @@ export type EventRow = {
 export type CommentRow = { id: string; event_id: string; body: string; created_by: string; created_at: string };
 export type ListRow = { id: string; name: string; sort: number };
 export type ItemRow = { id: string; list_id: string; name: string; done: boolean; created_by: string; created_at: string };
+export type CategoryRow = { id: string; name: string };
 export type ExpenseRow = {
   id: string; amount: number; spent_at: string; merchant: string; category: Category; paid_from: PaidFrom;
   private: boolean; status: "pending" | "confirmed"; slip_ref: string | null; bank: string | null;

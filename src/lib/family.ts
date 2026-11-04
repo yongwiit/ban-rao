@@ -1,7 +1,7 @@
 // ชื่อและสีของคนในบ้าน แก้ที่ไฟล์นี้ไฟล์เดียว
 export type Who = "dad" | "mom" | "pearl" | "all";
 export type Role = "dad" | "mom";
-export type PaidFrom = "pot" | Role;
+export type PaidFrom = "pot" | Role | "personal";
 
 export const PEOPLE: Record<Who, { name: string; color: string; soft: string }> = {
   dad: { name: "พ่ออั้ม", color: "#5E8FC9", soft: "#D6E6F7" },
@@ -14,6 +14,7 @@ export const PAID_FROM: Record<PaidFrom, string> = {
   pot: "กองกลาง",
   dad: "พ่ออั้มออกก่อน",
   mom: "แม่แพ็คออกก่อน",
+  personal: "จ่ายส่วนตัว",
 };
 
 export const CATEGORIES = {
@@ -25,7 +26,15 @@ export const CATEGORIES = {
   gift: "ของขวัญ",
   other: "อื่นๆ",
 } as const;
-export type Category = keyof typeof CATEGORIES;
+/** หมวดตั้งต้น (key) หรือชื่อหมวดที่บ้านสร้างเอง */
+export type Category = string;
+export function categoryLabel(c: string): string {
+  return (CATEGORIES as Record<string, string>)[c] ?? c;
+}
+/** ไม่นับในยอดใช้ของบ้าน: เห็นคนเดียว หรือ จ่ายส่วนตัว */
+export function isHouseholdSpend(e: { private: boolean; paid_from: string }): boolean {
+  return !e.private && e.paid_from !== "personal";
+}
 
 export const BILL_PERIODS = {
   monthly: { label: "ทุกเดือน", perYear: 12 },

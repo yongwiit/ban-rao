@@ -10,6 +10,7 @@ import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { daysUntil, nextDue } from "@/lib/bills";
 import { supabase } from "@/lib/supabase";
 import { eventWhen, overlapFilter } from "@/lib/events";
+import { isHouseholdSpend } from "@/lib/family";
 import { useLive } from "@/lib/useLive";
 import type { BillRow, EventRow, ExpenseRow, ItemRow } from "@/lib/types";
 
@@ -36,7 +37,7 @@ export default function TodayPage() {
   const spend = useLive<ExpenseRow>("expenses", hid, () =>
     supabase().from("expenses").select("*").eq("private", false).gte("spent_at", start).lt("spent_at", end), [start]);
 
-  const monthTotal = spend.rows.reduce((s, e) => s + Number(e.amount), 0);
+  const monthTotal = spend.rows.filter(isHouseholdSpend).reduce((s, e) => s + Number(e.amount), 0);
   const pending = spend.rows.filter((e) => e.status === "pending").length;
   const dueSoon = useMemo(
     () =>

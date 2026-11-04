@@ -7,7 +7,7 @@ import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
-import { BILL_PERIODS, CATEGORIES, PAID_FROM, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
+import { BILL_PERIODS, PAID_FROM, categoryLabel, isHouseholdSpend, PEOPLE, monthlySetAside, type BillPeriod } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { momOwesDad } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
@@ -31,7 +31,7 @@ export default function MoneyPage() {
   const settlements = useLive<SettlementRow>("settlements", hid, () => supabase().from("settlements").select("*"));
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").order("created_at"));
 
-  const shared = month.rows.filter((e) => !e.private);
+  const shared = month.rows.filter(isHouseholdSpend);
   const total = shared.reduce((s, e) => s + Number(e.amount), 0);
   const budget = household.monthly_budget;
   const owe = momOwesDad({
@@ -134,10 +134,10 @@ export default function MoneyPage() {
         {month.rows.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
         {month.rows.map((e) => (
           <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{CATEGORIES[e.category].slice(0, 2)}</span>}</span>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-mint">{e.private ? <LockIcon size={16} /> : <span className="text-xs font-semibold">{categoryLabel(e.category).slice(0, 2)}</span>}</span>
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate font-semibold">{e.merchant || CATEGORIES[e.category]}</span>
-              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} · {PAID_FROM[e.paid_from]}{e.slip_ref ? " · จากสลิป" : ""}{e.private ? " · เห็นคนเดียว" : ""}</span>
+              <span className="truncate font-semibold">{e.merchant || categoryLabel(e.category)}</span>
+              <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} · {PAID_FROM[e.paid_from]}{e.slip_ref ? " · จากสลิป" : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.paid_from !== "personal" ? ` · ${categoryLabel(e.category)}` : " · ไม่นับในยอดบ้าน"}</span>
             </span>
             {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
             <span className="font-semibold">{baht(Number(e.amount))}</span>
