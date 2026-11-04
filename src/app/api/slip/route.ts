@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/config";
 
 export const maxDuration = 60;
 
@@ -23,9 +24,9 @@ const PROMPT = `อ่านสลิปโอนเงินของธนา�
 
 export async function POST(req: Request) {
   const token = req.headers.get("authorization")?.replace(/^Bearer /, "");
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!token || !url || !anon) return Response.json({ error: "ยังไม่ได้ล็อกอิน" }, { status: 401 });
+  const url = SUPABASE_URL;
+  const anon = SUPABASE_ANON_KEY;
+  if (!token) return Response.json({ error: "ยังไม่ได้ล็อกอิน" }, { status: 401 });
   const { data: user } = await createClient(url, anon).auth.getUser(token);
   if (!user.user) return Response.json({ error: "ยังไม่ได้ล็อกอิน" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY) return Response.json({ error: "ยังไม่ได้ตั้ง ANTHROPIC_API_KEY" }, { status: 500 });
