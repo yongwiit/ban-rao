@@ -18,7 +18,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
       onClick={(e) => e.target === ref.current && onClose()}
       className="m-0 mt-auto w-full max-w-none bg-transparent p-0 backdrop:bg-cocoa/30 sm:mx-auto sm:max-w-md"
     >
-      <div className="mx-auto max-w-md rounded-t-[28px] bg-cream px-5 pt-5 pb-[max(24px,env(safe-area-inset-bottom))]">
+      <div className="mx-auto max-h-[88dvh] max-w-md overflow-y-auto overscroll-contain rounded-t-[28px] bg-cream px-5 pt-5 pb-[max(24px,env(safe-area-inset-bottom))]">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">{title}</h2>
           <button onClick={onClose} className="min-h-11 px-2 text-sm text-muted">ปิด</button>
