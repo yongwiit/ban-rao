@@ -4,6 +4,7 @@ import { HouseholdProvider, useHousehold } from "@/components/Household";
 import Link from "next/link";
 import { BottomNav } from "@/components/BottomNav";
 import { usePathname } from "next/navigation";
+import { FirstTour } from "@/components/Tour";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -12,6 +13,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <HouseholdProvider>
       <div className={`mx-auto min-h-dvh max-w-md px-5 pt-6 ${showNav ? "pb-32" : "pb-8"}`}><ParentGate path={path}>{children}</ParentGate></div>
       {showNav && <BottomNav />}
+      <FirstTour />
     </HouseholdProvider>
   );
 }

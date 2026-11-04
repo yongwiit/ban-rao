@@ -42,7 +42,7 @@ function mood(pct: number, dayOfMonth: number, daysInMonth: number) {
 }
 
 export default function TodayPage() {
-  const { household, userId, people, isParent, role } = useHousehold();
+  const { household, userId, people, isParent, role, shows } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -119,7 +119,7 @@ export default function TodayPage() {
         </div>
       )}
 
-      <section className="card flex flex-col gap-3">
+      {shows("calendar") && <section className="card flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-semibold">นัดวันนี้</h2>
           <Link href="/calendar" className="text-sm text-muted">ดูปฏิทิน</Link>
@@ -134,26 +134,26 @@ export default function TodayPage() {
             </div>
           </div>
         ))}
-      </section>
+      </section>}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/shopping" className="flex flex-col gap-1.5 rounded-3xl bg-mint p-4">
+      <div className="grid grid-cols-2 gap-3 empty:hidden">
+        {shows("shopping") && <Link href="/shopping" className="flex flex-col gap-1.5 rounded-3xl bg-mint p-4 only:col-span-2">
           <span className="font-display font-semibold">ต้องซื้อ</span>
           <span className="font-display text-3xl font-bold">{items.rows.length}</span>
           <span className="line-clamp-1 text-sm">{items.rows.slice(0, 3).map((i) => i.name).join(" ") || "ครบแล้ว"}</span>
-        </Link>
-        {isParent ? <Link href="/money" className="flex flex-col gap-1.5 rounded-3xl bg-peach p-4">
+        </Link>}
+        {isParent ? shows("money") && <Link href="/money" className="flex flex-col gap-1.5 rounded-3xl bg-peach p-4 only:col-span-2">
           <span className="font-display font-semibold">บิลใน 7 วัน</span>
           <span className="font-display text-3xl font-bold">{dueSoon.length}</span>
           <span className="line-clamp-1 text-sm">{dueSoon.map((b) => `${b.name} ${thaiDate(b.due, { day: "numeric", month: "short" })}`).join(" · ") || "ยังไม่มี"}</span>
-        </Link> : <Link href="/stars" className="flex flex-col gap-1.5 rounded-3xl bg-[#FBE9B8] p-4">
+        </Link> : shows("stars") && <Link href="/stars" className="flex flex-col gap-1.5 rounded-3xl bg-[#FBE9B8] p-4 only:col-span-2">
           <span className="font-display font-semibold">สมุดดาว</span>
           <span className="font-display text-3xl font-bold">⭐</span>
           <span className="text-sm">ทำงานบ้าน สะสมดาว แลกรางวัล</span>
         </Link>}
       </div>
 
-      {isParent && <><Link href="/money" className="card flex flex-col gap-2.5">
+      {isParent && shows("money") && <><Link href="/money" className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
           <span className="font-display font-semibold">เดือนนี้ใช้ไป</span>
           {household.budget_enabled && <span className="text-sm text-muted">งบ {baht(budget)} บาท</span>}

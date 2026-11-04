@@ -9,12 +9,16 @@ import { PushSetup } from "@/components/PushSetup";
 import { Credit } from "@/components/Credit";
 import { SoundToggle } from "@/components/SoundToggle";
 import { FamilyEditor } from "@/components/FamilyEditor";
+import { MenuSettings } from "@/components/MenuPicker";
+import { Tour } from "@/components/Tour";
+import { useState } from "react";
 import { GoogleImport } from "@/components/GoogleImport";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { baht } from "@/lib/format";
 
 export default function SettingsPage() {
-  const { household, role, partnerJoined, signOut, people, isParent } = useHousehold();
+  const { household, role, partnerJoined, signOut, people, isParent, shows } = useHousehold();
+  const [tour, setTour] = useState(false);
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,6 +32,9 @@ export default function SettingsPage() {
         <p className="text-muted">คุณคือ {people.get(role).name} · {partnerJoined ? "พ่อแม่อยู่ครบแล้ว" : "ยังรออีกคนเข้าบ้าน"}</p>
       </section>
 
+      {isParent && <MenuSettings onReplayTour={() => setTour(true)} />}
+      {!isParent && <button onClick={() => setTour(true)} className="card text-left text-sm font-semibold">📖 ดูวิธีใช้แอปอีกครั้ง</button>}
+      {tour && <Tour onClose={() => setTour(false)} />}
       {isParent && <FamilyEditor />}
       <PushSetup />
       <SoundToggle />
@@ -45,7 +52,7 @@ export default function SettingsPage() {
 
       <GoogleImport />
 
-      {isParent && <Link href="/money" className="card flex items-center gap-3 text-sm">
+      {isParent && shows("money") && <Link href="/money" className="card flex items-center gap-3 text-sm">
         <span className="flex size-9 items-center justify-center rounded-xl bg-mint"><WalletIcon size={18} /></span>
         <span className="flex flex-1 flex-col">
           <span className="font-semibold">งบประจำเดือน</span>

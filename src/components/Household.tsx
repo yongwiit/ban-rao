@@ -1,5 +1,6 @@
 "use client";
 
+import type { TabKey } from "@/lib/menus";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { clearJoinCode, pendingJoinCode } from "@/lib/invite";
 import type { Session } from "@supabase/supabase-js";
@@ -16,6 +17,7 @@ export type HouseholdRow = {
   join_code: string;
   monthly_budget: number;
   budget_enabled: boolean;
+  hidden_tabs: string[];
 };
 
 type Ctx = {
@@ -27,6 +29,10 @@ type Ctx = {
   people: People;
   reloadPeople: () => Promise<void>;
   reloadHousehold: () => Promise<void>;
+  /** เมนูนี้เปิดใช้อยู่ไหม */
+  shows: (tab: TabKey) => boolean;
+  tourDone: boolean;
+  finishTour: () => void;
   signOut: () => Promise<void>;
 };
 
@@ -40,7 +46,7 @@ export function useHousehold(): Ctx {
 
 export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean } | null | undefined>(undefined);
+  const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean; tourDone: boolean } | null | undefined>(undefined);
   const [people, setPeople] = useState<People>(() => makePeople(DEFAULT_PEOPLE));
 
   const loadPeople = useCallback(async (hid: string) => {
@@ -57,21 +63,22 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const loadMember = useCallback(async () => {
     if (!session) return;
     const db = supabase();
-    const { data: me } = await db.from("members").select("role, household_id").eq("user_id", session.user.id).maybeSingle();
+    const { data: me } = await db.from("members").select("role, household_id, tour_done").eq("user_id", session.user.id).maybeSingle();
     if (!me) {
       setMember(null);
       return;
     }
     const [{ data: hh }, { count }] = await Promise.all([
-      db.from("households").select("id, name, join_code, monthly_budget, budget_enabled").eq("id", me.household_id).single(),
+      db.from("households").select("id, name, join_code, monthly_budget, budget_enabled, hidden_tabs").eq("id", me.household_id).single(),
       db.from("members").select("user_id", { count: "exact", head: true }).eq("household_id", me.household_id).in("role", ["dad", "mom"]),
       loadPeople(me.household_id),
     ]);
     if (hh) {
       setMember({
         role: me.role as MemberRole,
-        household: { ...hh, monthly_budget: Number(hh.monthly_budget) },
+        household: { ...hh, monthly_budget: Number(hh.monthly_budget), hidden_tabs: hh.hidden_tabs ?? [] },
         partnerJoined: (count ?? 0) >= 2,
+        tourDone: !!me.tour_done,
       });
     }
   }, [session, loadPeople]);
@@ -107,6 +114,13 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         people,
         reloadPeople: () => loadPeople(member.household.id),
         reloadHousehold: loadMember,
+        shows: (tab) => !member.household.hidden_tabs.includes(tab),
+        tourDone: member.tourDone,
+        finishTour: () => {
+          setMember((m) => (m ? { ...m, tourDone: true } : m));
+          try { localStorage.setItem(`tour-done-${session.user.id}`, "1"); } catch {}
+          supabase().rpc("mark_tour_done").then(() => {});
+        },
         signOut: async () => {
           await supabase().auth.signOut();
           setMember(undefined);
