@@ -223,7 +223,7 @@ function ChargeForm({ card, charge, today, onDone }: { card: CardRow; charge: Ch
           <button type="button" className="chip" aria-pressed={months === 1} onClick={() => setMonths(1)}>จ่ายเต็ม</button>
           {MONTH_CHOICES.map((m) => <button type="button" key={m} className="chip" aria-pressed={months === m} onClick={() => setMonths(m)}>ผ่อน {m} เดือน</button>)}
           <label className="flex items-center gap-1 text-sm">อื่นๆ
-            <input className="field min-h-10 w-20" inputMode="numeric" aria-label="จำนวนเดือนที่ผ่อน" value={MONTH_CHOICES.includes(months) || months === 1 ? "" : String(months)} placeholder="เดือน"
+            <input className="field min-h-10" style={{ width: 80 }} inputMode="numeric" aria-label="จำนวนเดือนที่ผ่อน" value={MONTH_CHOICES.includes(months) || months === 1 ? "" : String(months)} placeholder="เดือน"
               onChange={(e) => { const v = Number(e.target.value.replace(/\D/g, "")); if (v) setMonths(Math.min(60, v)); }} />
           </label>
         </div>

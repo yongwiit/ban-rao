@@ -44,7 +44,9 @@ export function Income({ scope, spent, setAside, ym }: { scope: "home" | "mine";
         <button onClick={() => setOpen(true)} className="min-h-9 px-1 text-sm text-muted">{inc.length ? "แก้" : "+ ตั้งเงินเดือน"}</button>
       </div>
       {total === 0 ? (
-        <p className="text-sm text-muted">ตั้งเงินเดือน (หรือรายได้อื่น) แล้วแอปจะบอกว่าเดือนนี้ใช้ไปกี่ % ของรายได้ รวมบิลบัตรเครดิตด้วย</p>
+        scope === "home" && incomes.rows.some((i) => i.private)
+          ? <p className="text-sm text-muted">รายได้ที่ใส่ไว้ตั้งเป็น &quot;เห็นคนเดียว&quot; จึงไม่รวมในยอดบ้าน ดูได้ที่แท็บ &quot;ของฉัน&quot; หรือกด <b>แก้</b> แล้วแตะให้รวมในยอดบ้าน</p>
+          : <p className="text-sm text-muted">ตั้งเงินเดือน (หรือรายได้อื่น) แล้วแอปจะบอกว่าเดือนนี้ใช้ไปกี่ % ของรายได้ รวมบิลบัตรเครดิตด้วย</p>
       ) : (
         <>
           <div className="flex items-baseline justify-between">
@@ -92,11 +94,16 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
     if (!(n > 0)) return setMsg("ใส่ยอดต่อเดือนก่อนนะ");
     const { error } = await supabase().from("incomes").insert({ who, label: label.trim() || "เงินเดือน", amount: n, private: priv });
     if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
-    setAmount(""); setMsg(null); onChange();
+    setAmount(""); setPriv(false); onChange();
+    setMsg(`เพิ่มแล้ว ✓ ${all.get(who).name} ${baht(n)} บาท/เดือน${priv ? " (เห็นคนเดียว ดูได้ที่แท็บ \"ของฉัน\")" : ""}`);
   }
   async function update(r: IncomeRow, v: string) {
     const n = Number(v.replace(/,/g, ""));
     if (n > 0 && n !== Number(r.amount)) { await supabase().from("incomes").update({ amount: n }).eq("id", r.id); onChange(); }
+  }
+  async function togglePrivate(r: IncomeRow) {
+    await supabase().from("incomes").update({ private: !r.private }).eq("id", r.id);
+    onChange();
   }
   async function remove(id: string) {
     await supabase().from("incomes").delete().eq("id", id);
@@ -108,10 +115,15 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
       {rows.length > 0 && (
         <div className="flex flex-col gap-2">
           {rows.map((r) => (
-            <div key={r.id} className="flex items-center gap-2 text-sm">
-              <span className="flex min-w-0 flex-1 items-center gap-1 truncate">{r.private && <LockIcon />}{all.get(r.who).name} · {r.label}</span>
-              <input className="field min-h-10 w-28 text-right" inputMode="decimal" aria-label={`ยอด${r.label}`} defaultValue={String(Number(r.amount))} onBlur={(e) => update(r, e.target.value)} />
-              <button aria-label="ลบ" onClick={() => remove(r.id)} className="min-h-10 px-2 text-muted">✕</button>
+            <div key={r.id} className="flex flex-col gap-1.5 rounded-2xl bg-sand p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-semibold">{all.get(r.who).name} · {r.label}</span>
+                <span className="w-32 shrink-0"><input className="field min-h-10 text-right" inputMode="decimal" aria-label={`ยอด${r.label}`} defaultValue={String(Number(r.amount))} onBlur={(e) => update(r, e.target.value)} /></span>
+                <button aria-label="ลบ" onClick={() => remove(r.id)} className="min-h-10 px-2 text-muted">✕</button>
+              </div>
+              <button type="button" onClick={() => togglePrivate(r)} className="flex min-h-9 items-center gap-1.5 self-start text-xs">
+                {r.private ? <><LockIcon />เห็นคนเดียว (ไม่รวมในยอดบ้าน) · <b className="underline">แตะเพื่อให้รวมในยอดบ้าน</b></> : <>🏠 รวมในยอดบ้าน · <span className="underline">แตะเพื่อเปลี่ยนเป็นเห็นคนเดียว</span></>}
+              </button>
             </div>
           ))}
           <p className="text-xs text-muted">แตะตัวเลขเพื่อแก้ · ใส่เป็นยอดต่อเดือน (หลังหักภาษี/ประกันสังคมจะเห็นภาพจริงกว่า)</p>
@@ -126,7 +138,7 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
           <input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} />
           <LockIcon />เห็นคนเดียว (ไม่รวมในยอดบ้าน ดูได้ที่ &quot;ของฉัน&quot;)
         </label>
-        {msg && <p role="alert" className="text-sm text-rose">{msg}</p>}
+        {msg && <p role="status" className={`text-sm ${msg.startsWith("เพิ่มแล้ว") ? "text-[#3F8A5F]" : "text-rose"}`}>{msg}</p>}
         <button className="btn-dark">เพิ่ม</button>
       </form>
     </div>
