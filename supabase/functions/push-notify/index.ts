@@ -1,5 +1,5 @@
-// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด (cron ทุก 5 นาที) / ทดสอบ
-// ปลอดภัยแม้ใครเรียก: ส่งเฉพาะสิ่งที่ถึงเวลาจริง และกันส่งซ้ำด้วยตาราง push_log
+// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด / เตือนไปซื้อของ (cron ทุก 5 นาที) / ทดสอบ
+// ปลอดภัยแม้ใครเรียก: ส่งเฉพาะสิ่งที่ถึงเวลาจริง และกันส่งซ้ำ
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import webpush from "npm:web-push@3.6.7";
@@ -159,7 +159,7 @@ async function onTest(endpoint: string) {
   let sent = 0;
   for (const x of (data ?? []) as Sub[]) {
     await webpush.sendNotification({ endpoint: x.endpoint, keys: { p256dh: x.p256dh, auth: x.auth } },
-      JSON.stringify({ title: "🐻 บ้านเราแจ้งเตือนได้แล้ว", body: "จะเตือนเมื่อมีนัดใหม่ แก้นัด และก่อนถึงนัด", url: "/settings", tag: "test" }), { TTL: 600 });
+      JSON.stringify({ title: "🐻 บ้านเราแจ้งเตือนได้แล้ว", body: "จะเตือนเมื่อมีนัดใหม่ แก้นัด ก่อนถึงนัด และเวลาไปซื้อของ", url: "/settings", tag: "test" }), { TTL: 600 });
     sent++;
   }
   return { sent };
