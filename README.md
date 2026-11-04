@@ -8,7 +8,7 @@
 ### 1. ฐานข้อมูล Supabase (ฟรี)
 1. สมัครที่ https://supabase.com แล้วกด New project (เลือก Region: Singapore)
 2. เมนู **SQL Editor** > New query > เปิดไฟล์ `supabase/migrations/0001_init.sql` คัดลอกทั้งหมดไปวาง > กด **Run**
-3. เมนู **Authentication > Sign In / Providers > Email** ปิด **Confirm email** (จะได้สมัครแล้วใช้ได้เลย)
+3. วางไฟล์ `supabase/migrations/0002_auto_confirm.sql` แล้วกด **Run** อีกครั้ง (สมัครแล้วใช้ได้เลยไม่ต้องยืนยันอีเมล)
 4. เมนู **Project Settings > API** จดค่า `Project URL` และ `anon public key` ไว้
 
 ### 2. คีย์อ่านสลิป (Anthropic)

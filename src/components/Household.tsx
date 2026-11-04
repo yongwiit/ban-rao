@@ -118,9 +118,15 @@ function Login() {
       mode === "in"
         ? await auth.signInWithPassword({ email, password })
         : await auth.signUp({ email, password });
+    if (!error && mode === "up" && !data.session) {
+      // บัญชีถูกยืนยันอัตโนมัติด้วย trigger ในฐานข้อมูล จึงเข้าสู่ระบบต่อได้ทันที
+      const again = await auth.signInWithPassword({ email, password });
+      setBusy(false);
+      if (again.error) setMsg("สมัครแล้ว กดลิงก์ยืนยันในอีเมลก่อน แล้วกลับมาเข้าสู่ระบบ");
+      return;
+    }
     setBusy(false);
     if (error) setMsg(error.message);
-    else if (mode === "up" && !data.session) setMsg("ส่งอีเมลยืนยันแล้ว กดลิงก์ในอีเมลแล้วกลับมาเข้าสู่ระบบ");
   }
 
   return (
