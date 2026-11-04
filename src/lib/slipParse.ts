@@ -19,7 +19,7 @@ const MONTHS: [RegExp, number][] = [
 const BANK = /^(ธ\.|ธนาคาร|bank\b|กสิกร|kbank|k ?plus|ไทยพาณิชย์|scb|กรุงเทพ|bbl|กรุงไทย|ktb|กรุงศรี|krungsri|ทหารไทย|ttb|ออมสิน|gsb|ธกส|ธ\.ก\.ส|ยูโอบี|uob|ซีไอเอ็มบี|cimb|แลนด์|kkp|เกียรตินาคิน|พร้อมเพย์|promptpay|true ?money|ทรูมันนี่)/i;
 const MONEY = /(\d{1,3}(?:[,\s]\d{3})+|\d+)[.,](\d{2})(?!\d)/g;
 const GUESS: [RegExp, Category][] = [
-  [/ข้าว|กาแฟ|ก๋วยเตี๋ยว|อาหาร|ขนม|ร้านอาหาร|ส้มตำ|ชาบู|บุฟเฟ่|grab|lineman|foodpanda|robinhood|cafe|คาเฟ่|ครัว/i, "food"],
+  [/ข้าว|กาแฟ|ก๋วยเตี๋ยว|อาหาร|ขนม|ร้านอาหาร|ส้มตำ|ชาบู|บุฟเฟ่|grab|lineman|foodpanda|robinhood|cafe|coffee|คอฟฟี่|คาเฟ่|ครัว|ร้านข้าว|ก๋วยจั๊บ|หมูกระทะ|starbucks|amazon/i, "food"],
   [/น้ำมัน|ปตท|ptt|เชลล์|shell|บางจาก|caltex|คาลเท็กซ์|ทางด่วน|easy ?pass|m-?flow|ล้างรถ|ซ่อมรถ|ยางรถ|ที่จอด/i, "car"],
   [/การไฟฟ้า|ไฟฟ้า|การประปา|ประปา|ais|true|dtac|3bb|nt |ประกัน|insurance|ค่าเช่า|นิติบุคคล/i, "bill"],
   [/โรงเรียน|school|อนุบาล|kids|คิดส์|ของเล่น|toy/i, "pearl"],
@@ -68,20 +68,52 @@ function findRef(text: string): string | null {
   return m?.[1] ?? null;
 }
 
-function findParties(lines: string[]): { bank: string | null; recipient: string | null } {
-  const bankIdx = lines.map((l, i) => (BANK.test(l) ? i : -1)).filter((i) => i >= 0);
-  const bank = bankIdx.length ? lines[bankIdx[0]] : null;
-  const isName = (l: string | undefined) => !!l && !BANK.test(l) && !/x{2,}|\d{3,}|โอนเงิน|สำเร็จ|รายการ|จำนวน|บาท|:/i.test(l) && /[ก-๙a-z]{2,}/i.test(l);
+// ตัดเศษตัวอักษรจากโลโก้/ไอคอนที่ OCR อ่านติดมาหน้าบรรทัด เช่น "© ", "@ ", "e "
+const clean = (l: string) =>
+  l.replace(/^(?:[^ก-๙A-Za-z0-9]+|[A-Za-z]{1,2}\s+(?=[ก-๙]))+/, "").replace(/[^ก-๙A-Za-z0-9.)]+$/, "").trim();
+const ACCOUNT = /[xX*]{2,}|\d{3}-\d-\d{4,5}|\d{3}-\d{3}-\d{4}|รหัสร้านค้า|merchant ?id|biller ?id|รหัสผู้รับ|wallet ?id|เลขที่บัญชี|บัญชี ?:/i;
+const LABEL_TO = /^(ไปยัง|ไปที่|ไป|ถึง|ผู้รับเงิน|ผู้รับ|รับเงิน|ชื่อร้านค้า|ชื่อร้าน|ร้านค้า|ชำระให้|จ่ายให้|to|payee|merchant(?: name)?)(?=[\s:.]|$)\s*[:.]?\s*/i;
+const LABEL_FROM = /^(จาก|ผู้โอน|ผู้จ่าย|from)(?=[\s:.]|$)/i;
+const NOT_NAME = /โอนเงิน|ชำระเงิน|จ่ายบิล|เติมเงิน|สำเร็จ|รายการ|จำนวน|ยอด|บาท|ค่าธรรมเนียม|อ้างอิง|สแกน|ตรวจสอบ|บันทึก|ช่วยจำ|วันที่|เวลา|successful|complete|\bamount\b|\bfee\b|\bref\b|^k ?plus$|make|scb ?easy|น\.$|\d{1,2}[:.]\d{2}/i;
+const TITLED = /^(นาย|นางสาว|นาง|น\.ส\.?|ด\.ช\.?|ด\.ญ\.?|mr\.?|mrs\.?|ms\.?|miss|บจก\.?|บริษัท|หจก\.?|ห้าง|ร้าน|คุณ|co\.|company)/i;
+
+function isName(l: string | undefined): boolean {
+  if (!l || BANK.test(l) || ACCOUNT.test(l) || NOT_NAME.test(l) || LABEL_FROM.test(l)) return false;
+  const letters = (l.match(/[ก-๙A-Za-z]/g) ?? []).length;
+  const digits = (l.match(/\d/g) ?? []).length;
+  return letters >= 2 && digits <= letters / 2;
+}
+
+function findParties(raw: string[]): { bank: string | null; recipient: string | null } {
+  const lines = raw.map(clean).filter(Boolean);
+  const anchor = (l: string) => BANK.test(l) || ACCOUNT.test(l);
+  const stop = lines.findIndex((l) => /^(จำนวน|เลขที่รายการ|ค่าธรรมเนียม|amount)/i.test(l));
+  const body = stop >= 0 ? lines.slice(0, stop) : lines;
+  // ผู้โอน = ชื่อแรกที่มีธนาคาร/เลขบัญชีตามมาใน 2 บรรทัด
+  const sender = body.findIndex((l, i) => isName(l) && body.slice(i + 1, i + 3).some(anchor));
+  const bankLine = (sender >= 0 ? body.slice(sender + 1, sender + 3).find((l) => BANK.test(l)) : null) ?? lines.find((l) => BANK.test(l) && l.length <= 40) ?? null;
   let recipient: string | null = null;
-  if (bankIdx.length >= 2) {
-    const i = bankIdx[1];
-    recipient = isName(lines[i - 1]) ? lines[i - 1] : isName(lines[i + 1]) ? lines[i + 1] : null;
+
+  // 1) มีป้ายบอก เช่น "ไปยัง นาย ก" / "ผู้รับ" แล้วชื่ออยู่บรรทัดถัดไป
+  const to = lines.findIndex((l) => LABEL_TO.test(l));
+  if (to >= 0) {
+    const rest = lines[to].replace(LABEL_TO, "");
+    recipient = isName(rest) ? rest : lines.slice(to + 1, to + 3).find(isName) ?? null;
   }
+
+  // 2) แบบสลิปทั่วไป: [ชื่อผู้โอน / ธนาคาร / เลขบัญชี] แล้วตามด้วย [ชื่อผู้รับหรือร้าน / ธนาคาร หรือรหัสร้าน]
+  if (!recipient && sender >= 0) {
+    let i = sender + 1;
+    while (i < body.length && !isName(body[i])) i++;
+    recipient = body[i] ?? null;
+  }
+
+  // 3) ไม่เจอธนาคารเลย: ใช้ชื่อที่มีคำนำหน้า (คนที่สองคือผู้รับ)
   if (!recipient) {
-    const to = lines.findIndex((l) => /^(ไปยัง|ไป|ถึง|ผู้รับ|to)(?=[\s:.]|$)/i.test(l));
-    if (to >= 0) recipient = lines[to].replace(/^(ไปยัง|ไป|ถึง|ผู้รับ|to)\s*[:.]?\s*/i, "") || lines[to + 1] || null;
+    const titled = lines.filter((l) => TITLED.test(l) && isName(l));
+    recipient = titled[1] ?? null;
   }
-  return { bank, recipient: recipient?.slice(0, 80) ?? null };
+  return { bank: bankLine, recipient: recipient?.slice(0, 80) ?? null };
 }
 
 export function parseSlipText(raw: string): SlipFields {
