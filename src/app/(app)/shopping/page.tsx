@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useHousehold } from "@/components/Household";
 import { Bunny } from "@/components/Mascots";
-import { CheckIcon, PlusIcon, TrashIcon } from "@/components/Icons";
+import { CheckIcon, EditIcon, PlusIcon, TrashIcon } from "@/components/Icons";
+import { Sheet } from "@/components/Sheet";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { ItemRow, ListRow } from "@/lib/types";
@@ -16,7 +17,10 @@ export default function ShoppingPage() {
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [newList, setNewList] = useState("");
-  const listId = picked ?? lists.rows[0]?.id;
+  const [editList, setEditList] = useState<ListRow | null>(null);
+  const [editItem, setEditItem] = useState<ItemRow | null>(null);
+  const listId = lists.rows.some((l) => l.id === picked) ? picked! : lists.rows[0]?.id;
+  const current = lists.rows.find((l) => l.id === listId);
 
   const inList = items.rows.filter((i) => i.list_id === listId);
   const sorted = [...inList.filter((i) => !i.done), ...inList.filter((i) => i.done)];
@@ -68,6 +72,11 @@ export default function ShoppingPage() {
           <button key={l.id} aria-pressed={l.id === listId} onClick={() => setPicked(l.id)} className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium ${l.id === listId ? "bg-cocoa text-cream" : "bg-white"}`}>{l.name}</button>
         ))}
       </div>
+      {current && (
+        <button onClick={() => setEditList(current)} className="-mt-2 flex min-h-9 items-center gap-1 self-start text-sm text-muted">
+          <EditIcon size={14} />แก้ชื่อ / ลบลิสต์ &quot;{current.name}&quot;
+        </button>
+      )}
 
       <form onSubmit={(e) => { e.preventDefault(); add(name); }} className="flex items-center gap-2 rounded-[18px] bg-white py-1 pr-1.5 pl-3.5 shadow-[0_4px_14px_rgba(74,59,54,.06)]">
         <label htmlFor="add" className="sr-only">เพิ่มของ</label>
@@ -90,7 +99,9 @@ export default function ShoppingPage() {
               <span className={`flex size-[26px] shrink-0 items-center justify-center rounded-[9px] ${i.done ? "bg-[#7FBF9C] text-white" : "border-2 border-[#C9B8AE]"}`}>{i.done && <CheckIcon />}</span>
               <span className={`flex-1 ${i.done ? "text-muted line-through" : ""}`}>{i.name}</span>
             </button>
-            {i.done && <button aria-label={`ลบ ${i.name}`} onClick={() => removeItem(i)} className="flex size-11 items-center justify-center text-muted"><TrashIcon /></button>}
+            {i.done
+              ? <button aria-label={`ลบ ${i.name}`} onClick={() => removeItem(i)} className="flex size-11 items-center justify-center text-muted"><TrashIcon /></button>
+              : <button aria-label={`แก้ ${i.name}`} onClick={() => setEditItem(i)} className="flex size-11 items-center justify-center text-muted"><EditIcon /></button>}
           </div>
         ))}
       </section>
@@ -102,6 +113,41 @@ export default function ShoppingPage() {
         <input id="nl" className="field min-h-11" placeholder="สร้างลิสต์ใหม่ เช่น ของไปเที่ยว" value={newList} onChange={(e) => setNewList(e.target.value)} />
         <button className="btn-soft shrink-0">สร้าง</button>
       </form>
+
+      <Sheet open={!!editList} onClose={() => setEditList(null)} title="แก้ไขลิสต์">
+        {editList && (
+          <RenameForm key={editList.id} initial={editList.name} label="ชื่อลิสต์"
+            deleteLabel="ลบลิสต์นี้ (ของในลิสต์จะหายด้วย)"
+            onSave={async (v) => { await supabase().from("shopping_lists").update({ name: v }).eq("id", editList.id); await lists.refresh(); setEditList(null); }}
+            onDelete={async () => {
+              if (!confirm(`ลบลิสต์ "${editList.name}" และของทั้งหมดในลิสต์?`)) return;
+              await supabase().from("shopping_lists").delete().eq("id", editList.id);
+              setPicked(null); await lists.refresh(); items.refresh(); setEditList(null);
+            }} />
+        )}
+      </Sheet>
+
+      <Sheet open={!!editItem} onClose={() => setEditItem(null)} title="แก้ไขของ">
+        {editItem && (
+          <RenameForm key={editItem.id} initial={editItem.name} label="ชื่อของ" deleteLabel="ลบของชิ้นนี้"
+            onSave={async (v) => { await supabase().from("shopping_items").update({ name: v }).eq("id", editItem.id); items.refresh(); setEditItem(null); }}
+            onDelete={async () => { await removeItem(editItem); setEditItem(null); }} />
+        )}
+      </Sheet>
     </div>
+  );
+}
+
+function RenameForm({ initial, label, deleteLabel, onSave, onDelete }: {
+  initial: string; label: string; deleteLabel: string;
+  onSave: (v: string) => Promise<void>; onDelete: () => Promise<void>;
+}) {
+  const [v, setV] = useState(initial);
+  return (
+    <form className="flex flex-col gap-3" onSubmit={async (e) => { e.preventDefault(); if (v.trim()) await onSave(v.trim()); }}>
+      <label className="flex flex-col gap-1 text-sm font-medium">{label}<input className="field" required value={v} onChange={(e) => setV(e.target.value)} /></label>
+      <button className="btn-dark">บันทึก</button>
+      <button type="button" onClick={onDelete} className="flex min-h-11 items-center justify-center gap-1 text-sm text-rose"><TrashIcon />{deleteLabel}</button>
+    </form>
   );
 }
