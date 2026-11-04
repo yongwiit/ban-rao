@@ -14,7 +14,7 @@ import { dayKey, monthRange, thaiDate } from "@/lib/format";
 function thaiTime24(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
 }
-import { eventDaysIn, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
+import { eventDays, eventDaysIn, eventWhen, isMultiDay, overlapFilter } from "@/lib/events";
 import { REMIND_OPTIONS, REPEAT_LABEL, addDays, remindLabel, type Repeat } from "@/lib/recur";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
@@ -46,7 +46,13 @@ export default function CalendarPage() {
   const firstDow = new Date(ym.y, ym.m, 1).getDay();
   const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
   const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
-  const key = (d: number) => `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const weeks: (string | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    const row = cells.slice(i, i + 7).map((d) => (d === null ? null : key(d)));
+    while (row.length < 7) row.push(null);
+    weeks.push(row);
+  }
+  function key(d: number) { return `${ym.y}-${String(ym.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
   const today = dayKey(now);
   const selected = byDay[sel] ?? [];
 
@@ -76,23 +82,41 @@ export default function CalendarPage() {
 
       <section className="card p-3">
         <div className="grid grid-cols-7 pb-1 text-center text-xs text-muted">{WEEK.map((w) => <span key={w}>{w}</span>)}</div>
-        <div className="grid grid-cols-7 gap-0.5">
-          {cells.map((d, i) =>
-            d === null ? <span key={`b${i}`} /> : (
-              <button
-                key={d}
-                onClick={() => setSel(key(d))}
-                aria-label={thaiDate(key(d), { day: "numeric", month: "long" })}
-                aria-pressed={sel === key(d)}
-                className={`flex h-12 flex-col items-center justify-center gap-1 rounded-2xl text-[15px] ${sel === key(d) ? "bg-peach font-semibold" : ""} ${today === key(d) && sel !== key(d) ? "ring-2 ring-[#E9A0B4] ring-inset" : ""}`}
-              >
-                {d}
-                <span className="flex h-1.5 gap-0.5">
-                  {(byDay[key(d)] ?? []).slice(0, 4).map((e) => <span key={e.id} className={`h-1.5 rounded-full ${isMultiDay(e) ? "w-3" : "w-1.5"}`} style={{ background: PEOPLE[e.who].color }} />)}
-                </span>
-              </button>
-            ),
-          )}
+        <div className="flex flex-col gap-1">
+          {weeks.map((wk, wi) => {
+            const { segs, lanes, more } = layoutWeek(wk, byDay);
+            const rows = Math.max(lanes, 1);
+            return (
+              <div key={wi} className="grid grid-cols-7" style={{ gridTemplateRows: `26px repeat(${rows}, 17px) ${more.some(Boolean) ? "12px" : "4px"}` }}>
+                {wk.map((k, ci) => k === null ? <span key={`b${ci}`} style={{ gridColumn: ci + 1, gridRow: "1 / -1" }} /> : (
+                  <button
+                    key={k}
+                    onClick={() => setSel(k)}
+                    aria-label={thaiDate(k, { day: "numeric", month: "long" })}
+                    aria-pressed={sel === k}
+                    style={{ gridColumn: ci + 1, gridRow: "1 / -1" }}
+                    className={`mx-px flex flex-col items-center rounded-xl pt-1 text-[15px] ${sel === k ? "bg-peach font-semibold" : ""} ${today === k && sel !== k ? "ring-2 ring-[#E9A0B4] ring-inset" : ""}`}
+                  >
+                    {Number(k.slice(8))}
+                    {more[ci] > 0 && <span className="sr-only">มีนัด {(byDay[k] ?? []).length} รายการ</span>}
+                  </button>
+                ))}
+                {segs.map((g) => (
+                  <span
+                    key={`${g.e.id}-${g.s}`}
+                    aria-hidden
+                    style={{ gridColumn: `${g.s + 1} / ${g.t + 2}`, gridRow: g.lane + 2, background: PEOPLE[g.e.who].soft, color: "#4A3B36", borderLeft: g.head ? `3px solid ${PEOPLE[g.e.who].color}` : undefined }}
+                    className={`pointer-events-none z-10 mx-0.5 mb-px truncate px-1 text-[10px] leading-4 ${g.head ? "rounded-l-md" : "-ml-px rounded-l-none"} ${g.tail ? "rounded-r-md" : "-mr-px rounded-r-none"}`}
+                  >
+                    {g.e.title}
+                  </span>
+                ))}
+                {more.map((n, ci) => n > 0 && (
+                  <span key={`m${ci}`} aria-hidden style={{ gridColumn: ci + 1, gridRow: rows + 2 }} className="pointer-events-none z-10 text-center text-[9px] leading-3 text-muted">+{n}</span>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -243,4 +267,40 @@ function AddEvent({ open, onClose, day, editing, mine = true }: { open: boolean;
       </form>
     </Sheet>
   );
+}
+
+const MAX_LANES = 3;
+type Seg = { e: EventRow; s: number; t: number; lane: number; head: boolean; tail: boolean };
+
+/** วางแถบนัดในสัปดาห์: นัดหลายวันเป็นแถบยาวต่อกัน นัดวันเดียวเป็นแถบสั้นพร้อมชื่อ */
+function layoutWeek(wk: (string | null)[], byDay: Record<string, EventRow[]>) {
+  const runs: Omit<Seg, "lane">[] = [];
+  const seen = new Set<string>();
+  wk.forEach((k, ci) => {
+    if (!k) return;
+    for (const e of byDay[k] ?? []) {
+      const id = `${e.id}@${ci}`;
+      if (seen.has(id)) continue;
+      let t = ci;
+      const multi = isMultiDay(e) && (e.repeat ?? "none") === "none";
+      if (multi) while (t + 1 < 7 && wk[t + 1] && (byDay[wk[t + 1]!] ?? []).some((x) => x.id === e.id)) t++;
+      for (let c = ci; c <= t; c++) seen.add(`${e.id}@${c}`);
+      const days = multi ? eventDays(e) : [k];
+      runs.push({ e, s: ci, t, head: days[0] === k, tail: days[days.length - 1] === wk[t] });
+    }
+  });
+  const multi = (r: Omit<Seg, "lane">) => (isMultiDay(r.e) && (r.e.repeat ?? "none") === "none" ? 1 : 0);
+  runs.sort((a, b) => multi(b) - multi(a) || b.t - b.s - (a.t - a.s) || a.s - b.s || a.e.starts_at.localeCompare(b.e.starts_at));
+  const used: boolean[][] = [];
+  const segs: Seg[] = [];
+  const more = Array(7).fill(0) as number[];
+  for (const r of runs) {
+    let lane = 0;
+    while (lane < MAX_LANES && used[lane]?.slice(r.s, r.t + 1).some(Boolean)) lane++;
+    if (lane >= MAX_LANES) { for (let c = r.s; c <= r.t; c++) more[c]++; continue; }
+    used[lane] ??= Array(7).fill(false);
+    for (let c = r.s; c <= r.t; c++) used[lane][c] = true;
+    segs.push({ ...r, lane });
+  }
+  return { segs, lanes: used.length, more };
 }
