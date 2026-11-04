@@ -1,4 +1,4 @@
-// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด / เตือนไปซื้อของ (cron ทุก 5 นาที) / ทดสอบ
+// แจ้งเตือนบ้านเรา: นัดใหม่ / แก้นัด / เตือนก่อนถึงนัด / เตือนไปซื้อของ (cron ทุก 5 นาที) / ส่งหัวใจ / ทดสอบ
 // ปลอดภัยแม้ใครเรียก: ส่งเฉพาะสิ่งที่ถึงเวลาจริง และกันส่งซ้ำ
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
@@ -151,6 +151,16 @@ async function onListCron(now: number) {
   return sent;
 }
 
+/** ส่งหัวใจ 💗 ถึงคนในบ้าน */
+async function onHeart(id: string) {
+  const { data: h } = await db.from("hearts").select("id, from_user, to_user, household_id, created_at").eq("id", id).maybeSingle();
+  if (!h || Date.now() - new Date(h.created_at).getTime() > 5 * 60_000) return { sent: 0 };
+  const { data: from } = await db.from("members").select("role").eq("user_id", h.from_user).eq("household_id", h.household_id).maybeSingle();
+  const name = from ? NAMES[from.role] ?? "คนในบ้าน" : "คนในบ้าน";
+  const sent = await send([h.to_user], "notify_new", { title: `💗 ${name}ส่งหัวใจให้`, body: "คิดถึงนะ", url: "/", tag: `heart-${h.from_user}` });
+  return { sent };
+}
+
 async function onTest(endpoint: string) {
   const { data: s } = await db.from("push_subscriptions").select("user_id").eq("endpoint", endpoint).maybeSingle();
   if (!s) return { sent: 0 };
@@ -173,6 +183,7 @@ Deno.serve(async (req) => {
     let out: unknown = { ok: true };
     if (body.type === "cron") out = await onCron();
     else if ((body.type === "new" || body.type === "change") && typeof body.event_id === "string") out = await onChange(body.event_id, body.type);
+    else if (body.type === "heart" && typeof body.heart_id === "string") out = await onHeart(body.heart_id);
     else if (body.type === "test" && typeof body.endpoint === "string") out = await onTest(body.endpoint);
     return Response.json(out, { headers: cors });
   } catch (err) {

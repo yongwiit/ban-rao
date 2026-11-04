@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { useHousehold } from "@/components/Household";
-import { Chick, Family } from "@/components/Mascots";
+import { Chick } from "@/components/Mascots";
+import { FamilyPresence } from "@/components/Presence";
 import { GearIcon, PlusIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
@@ -22,7 +23,7 @@ function greeting(h: number) {
 }
 
 export default function TodayPage() {
-  const { household } = useHousehold();
+  const { household, userId } = useHousehold();
   const hid = household.id;
   const now = new Date();
   const today = dayKey(now);
@@ -62,7 +63,7 @@ export default function TodayPage() {
           <h1 className="font-display text-[26px] font-bold whitespace-nowrap">{greeting(Number(thaiTime(now).slice(0, 2)))}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Family size={44} />
+          <FamilyPresence me={userId} size={40} />
           <Link href="/settings" aria-label="ตั้งค่า" className="flex size-11 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(74,59,54,.06)]"><GearIcon size={20} /></Link>
         </div>
       </header>

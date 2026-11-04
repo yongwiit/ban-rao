@@ -8,6 +8,7 @@ import type { Role } from "@/lib/family";
 import { PEOPLE } from "@/lib/family";
 import { Bear, Bunny, Family } from "./Mascots";
 import { Credit } from "./Credit";
+import { PresenceProvider } from "./Presence";
 
 export type HouseholdRow = {
   id: string;
@@ -90,7 +91,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         },
       }}
     >
-      {children}
+      <PresenceProvider userId={session.user.id} role={member.role} householdId={member.household.id}>{children}</PresenceProvider>
     </HouseholdContext.Provider>
   );
 }
