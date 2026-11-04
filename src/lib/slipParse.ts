@@ -2,6 +2,7 @@
 import type { Category } from "./family";
 
 export type SlipFields = {
+  kind: "slip" | "receipt";
   amount: number | null;
   datetime: string | null; // YYYY-MM-DDTHH:mm เวลาไทย
   recipient: string | null;
@@ -26,7 +27,11 @@ const GUESS: [RegExp, Category][] = [
   [/lotus|โลตัส|big ?c|บิ๊กซี|makro|แม็คโคร|แม็กซ์แวลู|max ?value|7-?eleven|เซเว่น|cp ?all|ซีพี ออลล์|tops|ท็อปส์|villa|วิลล่า|ซูเปอร์|super|homepro|โฮมโปร|ไทวัสดุ|ikea|อิเกีย|watsons|วัตสัน|boots|ร้านยา|เภสัช/i, "home"],
 ];
 
-const norm = (s: string) => s.replace(/ํา/g, "ำ").replace(/[|]/g, " ").replace(/[ \t]+/g, " ");
+const norm = (s: string) =>
+  s.replace(/ํา/g, "ำ")
+    .replace(/\.[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]+/g, ".") // สระลอยหลังจุด เช่น "พ.ุย." = OCR อ่านเพี้ยน
+    .replace(/[๐-๙]/g, (d) => String(d.charCodeAt(0) - 0x0e50))
+    .replace(/[|]/g, " ").replace(/[ \t]+/g, " ");
 const money = (m: RegExpMatchArray) => Number(`${m[1].replace(/[,\s]/g, "")}.${m[2]}`);
 
 function findAmount(text: string): number | null {
@@ -116,10 +121,116 @@ function findParties(raw: string[]): { bank: string | null; recipient: string | 
   return { bank: bankLine, recipient: recipient?.slice(0, 80) ?? null };
 }
 
+// ---------- ใบเสร็จ ----------
+const RECEIPT_HINT = /ใบเสร็จ|receipt|tax ?inv|ใบกำกับภาษี|ราคารวม|รวมทั้งสิ้น|ยอดสุทธิ|เงินทอน|\bchange\b|\bcash\b|เงินสด|vat|vatable|subtotal|sub ?total|pos ?(?:id|no)|cashier|พนักงาน|ขอบคุณ|thank ?you/gi;
+const SLIP_HINT = /โอนเงินสำเร็จ|ชำระเงินสำเร็จ|จ่ายบิลสำเร็จ|เลขที่รายการ|รหัสอ้างอิง|ค่าธรรมเนียม/;
+const TOTAL_STRONG = /รวมทั้งสิ้น|รวมท.?ั?งส|ยอดสุ.?ธ|สุ[ทกห]ธิ|ยอดชำระ|ยอดที่ต้องชำระ|grand ?total|net ?total|net ?amount|total ?due|amount ?due|total ?amount|ทั้งหมด/i;
+const TOTAL_WEAK = /total|ยอดรวม|รวมเงิน|รวม|ttl/i;
+const NOT_TOTAL = /sub ?total|ก่อน ?vat|ก่อนภาษี|vatable|ภาษี|vat|ส่วนลด|discount|เงินทอน|ทอน|change|cash|เงินสด|รับเงิน|รับมา|tendered|point|แต้ม|สะสม/i;
+const MONEY_LOOSE = /(\d{1,3}(?:,\d{3})+|\d+)(?:[.,](\d{2}))?(?![\d.,])/g;
+const moneyLoose = (m: RegExpMatchArray) => Number(`${m[1].replace(/,/g, "")}.${m[2] ?? "00"}`);
+
+/** เดาว่าข้อความเป็นใบเสร็จ (ไม่ใช่สลิปโอนเงิน) */
+export function looksLikeReceipt(text: string): boolean {
+  if (SLIP_HINT.test(text)) return false;
+  return (text.match(RECEIPT_HINT) ?? []).length >= 2 || TOTAL_STRONG.test(text);
+}
+
+function amountOnLine(lines: string[], i: number): number | null {
+  for (const ln of [lines[i], lines[i + 1]]) {
+    if (!ln) continue;
+    const vals = [...ln.matchAll(MONEY_LOOSE)].map(moneyLoose).filter((v) => v > 0 && v < 1e7);
+    // ราคาอยู่ท้ายบรรทัด
+    if (vals.length) return vals[vals.length - 1];
+  }
+  return null;
+}
+
+function receiptTotal(lines: string[]): number | null {
+  // ไล่จากล่างขึ้นบน เพราะยอดรวมสุดท้ายมักอยู่ล่าง
+  for (const re of [TOTAL_STRONG, TOTAL_WEAK]) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (re.test(lines[i]) && !NOT_TOTAL.test(lines[i].replace(re, ""))) {
+        const v = amountOnLine(lines, i);
+        if (v) return v;
+      }
+    }
+  }
+  return null;
+}
+
+/** ยอดรวมจากใบเสร็จ ตรวจซ้ำด้วย เงินสด − เงินทอน ถ้ามี (ช่วยตอนตัวเลขอ่านเพี้ยน) */
+function receiptAmount(lines: string[]): number | null {
+  const found = receiptTotal(lines) ?? receiptMax(lines);
+  const pick = (re: RegExp) => {
+    const l = lines.find((x) => re.test(x) && !/ใบเสร็จ|ใบกำกับ/.test(x));
+    const v = l ? [...l.matchAll(MONEY)].map(money) : [];
+    return v.length ? v[v.length - 1] : null;
+  };
+  const cash = pick(/เงินสด|cash|รับเงิน|รับมา|tendered/i), change = pick(/เงินทอน|ทอน|change/i);
+  if (cash && change != null && cash > change) {
+    const paid = Math.round((cash - change) * 100) / 100;
+    if (!found || Math.abs(found - paid) <= Math.max(1, paid * 0.02)) return paid;
+  }
+  return found;
+}
+
+function receiptMax(lines: string[]): number | null {
+  // ไม่เจอคำว่ารวม: ใช้ราคาที่มากที่สุด (ไม่นับเงินสด/เงินทอน)
+  const vals = lines.filter((l) => !NOT_TOTAL.test(l) && !/โทร|tel|tax ?id|เลขประจำตัว|\d{2}[/-]\d{2}[/-]\d{2,4}/i.test(l))
+    .flatMap((l) => [...l.matchAll(MONEY)].map(money)).filter((v) => v > 0 && v < 1e6);
+  return vals.length ? Math.max(...vals) : null;
+}
+
+function receiptDate(text: string): string | null {
+  const thai = findDate(text);
+  if (thai) return thai;
+  const m = text.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})(?:[^\d\n]{0,12}(\d{1,2})[:.](\d{2}))?/);
+  if (!m) return null;
+  const d = Number(m[1]), mon = Number(m[2]);
+  let y = Number(m[3]);
+  if (y < 100) y += y > 40 ? 2500 : 2000;
+  if (y > 2400) y -= 543;
+  if (d < 1 || d > 31 || mon < 1 || mon > 12 || y < 2000 || y > 2100) return null;
+  let h = m[4] ? Number(m[4]) : NaN, mi = m[5] ? Number(m[5]) : NaN;
+  if (!(h <= 23 && mi <= 59)) {
+    const t = text.match(/(?:^|[^\d])([01]?\d|2[0-3])[:.]([0-5]\d)(?![\d.])/m);
+    h = t ? Number(t[1]) : 12; mi = t ? Number(t[2]) : 0;
+  }
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${p(mon)}-${p(d)}T${p(h)}:${p(mi)}`;
+}
+
+function receiptShop(lines: string[]): string | null {
+  const skip = /ใบเสร็จ|receipt|tax ?inv|ใบกำกับ|ต้นฉบับ|สำเนา|copy|abb|เลขประจำตัว|tax ?id|โทร|tel|เลขที่|no\.|pos|วันที่|date|เวลา|time|สาขาที่|www|http|@|ยินดีต้อนรับ|welcome/i;
+  for (const raw of lines.slice(0, 6)) {
+    const l = clean(raw);
+    const letters = (l.match(/[ก-๙A-Za-z]/g) ?? []).length;
+    if (letters >= 3 && !skip.test(l) && !MONEY.test(l)) { MONEY.lastIndex = 0; return l.slice(0, 60); }
+    MONEY.lastIndex = 0;
+  }
+  return null;
+}
+
+function receiptNo(text: string): string | null {
+  const m = text.match(/(?:เลขที่(?:ใบเสร็จ|ใบกำกับ)?|receipt ?(?:no|#)|tax ?inv(?:oice)?\.? ?(?:no)?|inv(?:oice)? ?no|bill ?no|r#|no\.?)\s*[:#.]?\s*([A-Za-z0-9/-]{5,})/i);
+  return m?.[1] ?? null;
+}
+
+export function parseReceiptText(raw: string): SlipFields {
+  const text = norm(raw);
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const shop = receiptShop(lines);
+  const no = receiptNo(text);
+  const category_guess = GUESS.find(([re]) => re.test(shop ?? "") || re.test(lines.slice(0, 8).join(" ")))?.[1] ?? "other";
+  return { kind: "receipt", amount: receiptAmount(lines), datetime: receiptDate(text), recipient: shop, bank: null, reference: no ? `rc:${(shop ?? "").slice(0, 12)}:${no}` : null, category_guess };
+}
+
 export function parseSlipText(raw: string): SlipFields {
   const text = norm(raw);
+  if (looksLikeReceipt(text)) return parseReceiptText(raw);
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const { bank, recipient } = findParties(lines);
   const category_guess = GUESS.find(([re]) => re.test(recipient ?? ""))?.[1] ?? "other";
-  return { amount: findAmount(text), datetime: findDate(text), recipient, bank, reference: findRef(text), category_guess };
+  return { kind: "slip", amount: findAmount(text), datetime: findDate(text), recipient, bank, reference: findRef(text), category_guess };
 }

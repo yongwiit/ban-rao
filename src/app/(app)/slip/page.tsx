@@ -10,7 +10,7 @@ import type { Role } from "@/lib/family";
 import { useHousehold } from "@/components/Household";
 import { dayKey, thaiTime } from "@/lib/format";
 type SlipResult = {
-  is_slip: boolean; amount: number | null; datetime: string | null; recipient: string | null;
+  is_slip: boolean; kind?: "slip" | "receipt"; amount: number | null; datetime: string | null; recipient: string | null;
   bank: string | null; reference: string | null;
   category_guess: "home" | "food" | "pearl" | "bill" | "car" | "gift" | "other";
 };
@@ -68,10 +68,10 @@ export default function SlipPage() {
           if (o.amount) r = { ...o, is_slip: true, category_guess: o.category_guess as SlipResult["category_guess"] };
         } catch (e) { console.warn("ocr failed", e); }
         if (!r) {
-          patch(key, { state: "error", msg: "อ่านยอดจากสลิปนี้ไม่ได้ กรอกเองด้านล่างได้เลยนะ", draft: toDraft({ is_slip: false, amount: null, datetime: null, recipient: null, bank: null, reference: null, category_guess: "other" }, role) });
+          patch(key, { state: "error", msg: "อ่านยอดจากภาพนี้ไม่ได้ กรอกเองด้านล่างได้เลยนะ (ถ่ายใบเสร็จให้ตรง สว่าง เต็มกรอบ จะอ่านได้ดีขึ้น)", draft: toDraft({ is_slip: false, amount: null, datetime: null, recipient: null, bank: null, reference: null, category_guess: "other" }, role) });
           continue;
         }
-        patch(key, { state: "ready", draft: toDraft(r, role), msg: r.is_slip ? undefined : "ภาพนี้อาจไม่ใช่สลิป ตรวจอีกทีนะ" });
+        patch(key, { state: "ready", draft: toDraft(r, role), msg: r.kind === "receipt" ? "อ่านใบเสร็จให้แล้ว ตรวจยอดรวมกับชื่อร้านอีกทีน้า" : undefined });
       } catch {
         setItems((xs) => xs.some((x) => x.key === key) ? xs : [...xs, { key, preview: "", state: "error", msg: "เปิดไฟล์ภาพนี้ไม่ได้" }]);
         patch(key, { state: "error", msg: "เปิดไฟล์ภาพนี้ไม่ได้" });
@@ -87,7 +87,7 @@ export default function SlipPage() {
     <div className="flex flex-col gap-3">
       <header className="flex items-center gap-2">
         <Link href="/money" aria-label="กลับ" className="flex size-11 items-center justify-center rounded-full bg-white"><BackIcon /></Link>
-        <h1 className="font-display text-2xl font-bold">บันทึกจากสลิป</h1>
+        <h1 className="font-display text-2xl font-bold">บันทึกจากสลิป / ใบเสร็จ</h1>
       </header>
 
       <input ref={input} type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e.target.files)} />
@@ -104,7 +104,7 @@ export default function SlipPage() {
         <>
           <button onClick={() => input.current?.click()} className="card flex flex-col items-center gap-2 border-2 border-dashed border-line py-6 text-center">
             <UploadIcon size={28} />
-            <span className="font-semibold">เลือกภาพสลิป</span>
+            <span className="font-semibold">เลือกภาพสลิปหรือใบเสร็จ</span>
             <span className="text-xs text-muted">เลือกหลายใบพร้อมกันได้ · สลิปซ้ำจะไม่ถูกบันทึกสองรอบ</span>
           </button>
 
@@ -120,7 +120,7 @@ export default function SlipPage() {
                 )}
                 <div className="flex flex-1 items-center gap-2 text-sm">
                   <Bunny size={36} happy={it.state === "ready"} />
-                  {it.state === "reading" ? "กำลังอ่านสลิปให้นะ… (ครั้งแรกอาจใช้เวลาสักครู่)" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
+                  {it.state === "reading" ? "กำลังอ่านให้นะ… (ครั้งแรกอาจใช้เวลาสักครู่)" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
                 </div>
                 <button onClick={() => remove(it.key)} aria-label="ยกเลิกสลิปใบนี้" className="flex min-h-11 shrink-0 flex-col items-center justify-center rounded-2xl border border-line bg-cream px-2.5 text-xs text-muted">
                   <span className="text-lg leading-none">✕</span>ยกเลิก
