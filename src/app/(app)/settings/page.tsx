@@ -7,6 +7,7 @@ import { LineLink } from "@/components/LineLink";
 import { CalendarLink } from "@/components/CalendarLink";
 import { PushSetup } from "@/components/PushSetup";
 import { Credit } from "@/components/Credit";
+import { SoundToggle } from "@/components/SoundToggle";
 import { GoogleImport } from "@/components/GoogleImport";
 import { BackIcon, ChevronIcon, WalletIcon } from "@/components/Icons";
 import { PEOPLE } from "@/lib/family";
@@ -28,6 +29,7 @@ export default function SettingsPage() {
       </section>
 
       <PushSetup />
+      <SoundToggle />
 
       <section className="card flex flex-col gap-2">
         <h2 className="font-display text-[17px] font-semibold">ชวนเข้าบ้าน · รหัส {household.join_code}</h2>

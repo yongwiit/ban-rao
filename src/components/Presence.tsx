@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { PEOPLE } from "@/lib/family";
 import type { Role } from "@/lib/family";
 import { Bear, Bunny, Chick } from "./Mascots";
+import { play } from "@/lib/sfx";
 
 export type MemberInfo = { user_id: string; role: Role; last_seen_at: string | null };
 type Ctx = { members: MemberInfo[]; online: Set<string>; sendHeart: (to: string) => Promise<string | null> };
@@ -43,6 +44,7 @@ export function PresenceProvider({ userId, role, householdId, children }: { user
     const hc = db.channel(`hearts-${userId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "hearts", filter: `to_user=eq.${userId}` }, (p) => {
         const row = p.new as { id: string; from_user: string };
+        play("receive");
         setHearts((h) => [...h, { id: row.id, from: row.from_user }]);
         setTimeout(() => setHearts((h) => h.filter((x) => x.id !== row.id)), 3200);
       })
@@ -133,6 +135,7 @@ export function FamilyPresence({ me, size = 44 }: { me: string; size?: number })
               <button
                 className="btn-soft mt-2 w-full"
                 onClick={async () => {
+                  play("heart");
                   const err = await sendHeart(sel.user_id);
                   setMsg(err ?? `ส่งหัวใจให้${PEOPLE[sel.role].name}แล้ว 💗`);
                 }}
