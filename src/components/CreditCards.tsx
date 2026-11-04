@@ -120,10 +120,18 @@ export function CreditCards() {
                 <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัด {day(s.cycleEnd)} · จ่าย {day(s.cycleDue)}</span>
               </span>
             ) : nothing ? (
-              <span className="flex items-baseline justify-between gap-2 opacity-70">
-                <span className="text-sm">บิลล่าสุดไม่มียอด</span>
-                <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัดรอบ {day(s.cycleEnd)}</span>
-              </span>
+              s.cycleAmount > 0 ? (
+                // บิลรอบก่อนไม่มียอด → แสดงบิลที่กำลังจะตัด (เช่น ตัดรอบวันนี้)
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm">ต้องจ่าย <b className="font-display text-xl">{baht(s.cycleAmount)}</b> บาท</span>
+                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs font-semibold">ตัด {day(s.cycleEnd)} · จ่าย {day(s.cycleDue)}</span>
+                </span>
+              ) : (
+                <span className="flex items-baseline justify-between gap-2 opacity-70">
+                  <span className="text-sm">ยังไม่มียอดต้องจ่าย</span>
+                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัดรอบ {day(s.cycleEnd)}</span>
+                </span>
+              )
             ) : (
               <span className={`flex items-baseline justify-between gap-2 ${paid ? "opacity-60" : ""}`}>
                 <span className="text-sm">{paid ? "จ่ายแล้ว" : "ต้องจ่าย"} <b className={`font-display text-xl ${paid ? "line-through" : ""}`}>{baht(s.last.amount)}</b> บาท</span>
