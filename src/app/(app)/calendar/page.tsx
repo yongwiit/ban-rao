@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
+import { CalendarLink } from "@/components/CalendarLink";
 import { Bear } from "@/components/Mascots";
 import { ChatIcon, ChevronIcon, EditIcon, LockIcon, PlusIcon, TrashIcon } from "@/components/Icons";
 import { PEOPLE, type Who } from "@/lib/family";
@@ -101,6 +102,8 @@ export default function CalendarPage() {
           <EventCard key={e.id} e={e} day={sel} mine={e.created_by === userId} open={openId === e.id} onToggle={() => setOpenId(openId === e.id ? null : e.id)} onEdit={() => setEditing(e)} householdId={household.id} />
         ))}
       </section>
+
+      <CalendarLink />
 
       <AddEvent open={adding} onClose={() => setAdding(false)} day={sel} />
       {editing && <AddEvent key={editing.id} open onClose={() => setEditing(null)} day={sel} editing={editing} mine={editing.created_by === userId} />}
