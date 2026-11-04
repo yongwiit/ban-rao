@@ -197,7 +197,7 @@ export default function StarsPage() {
               <span className="flex size-10 items-center justify-center rounded-xl bg-sand text-xl">{t.emoji}</span>
               <span className="flex flex-col">
                 <span className="font-semibold">{t.title}</span>
-                <span className="text-xs text-muted">+{t.stars} ดาว{t.kid ? ` · ของ${people.get(t.kid).name}` : ""}</span>
+                <span className="text-xs text-muted">+{t.stars} ดาว{t.kid ? ` · ของ${people.get(t.kid).name}` : ""}{isParent ? " · ✏️ แตะเพื่อแก้/ลบ" : ""}</span>
               </span>
             </button>
             <button className="btn-soft min-w-24 px-3 text-sm" disabled={busy === t.title} onClick={() => earn(t)}>{isParent ? "ให้ดาว" : "ทำแล้ว!"}</button>
@@ -223,6 +223,7 @@ export default function StarsPage() {
                     <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-sand"><span className="block h-1.5 rounded-full bg-[#F2C94C]" style={{ width: `${pct}%` }} /></span>
                     {r.cost} ดาว
                   </span>
+                  {isParent && <span className="text-xs text-muted">✏️ แตะเพื่อแก้/ลบ</span>}
                 </span>
               </button>
               <button className="btn-dark min-w-24 px-3 text-sm" disabled={balance < r.cost || busy === r.title} onClick={() => redeem(r)}>{isParent ? "แลกให้" : "ขอแลก"}</button>
