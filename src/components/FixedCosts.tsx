@@ -101,7 +101,7 @@ export function FixedCosts({ scope, bills, subs, monthRows, isThisMonth, onRecor
 type Method = "manual" | "auto" | "variable";
 
 function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home" | "mine"; onDone: () => void }) {
-  const { people } = useHousehold();
+  const { people, userId } = useHousehold();
   const cats = useCategories();
   const [name, setName] = useState(bill?.name ?? "");
   const [amount, setAmount] = useState(bill ? String(Number(bill.amount)) : "");
@@ -126,6 +126,8 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
       auto_record: auto, variable: method === "variable",
       // เริ่มจดอัตโนมัติจากวันนี้ (ไม่ย้อนจดเดือนที่ผ่านมา)
       auto_from: auto ? (bill?.auto_record && bill.auto_from ? bill.auto_from : dayKey(new Date())) : null,
+      // เปลี่ยนเป็นส่วนตัว = เป็นของคนที่แก้ (รายการเก่าอาจยังไม่มีเจ้าของ)
+      ...(paidFrom === "personal" ? { created_by: userId } : {}),
     };
     const { error } = bill ? await supabase().from("bills").update(row).eq("id", bill.id) : await supabase().from("bills").insert(row);
     if (error) return setErr("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
