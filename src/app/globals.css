@@ -1,26 +1,57 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-cream: #FFF8F0;
+  --color-cocoa: #4A3B36;
+  --color-muted: #7A6A63;
+  --color-line: #E3D3C8;
+  --color-sand: #F3EAE2;
+  --color-peach: #FDE3D6;
+  --color-mint: #DFF1E6;
+  --color-mint-strong: #BFE3CF;
+  --color-lavender: #E6DDF5;
+  --color-sky: #D6E6F7;
+  --color-butter: #FBE39A;
+  --color-rose: #D9738F;
+  --font-sans: var(--font-noto-thai), system-ui, sans-serif;
+  --font-display: var(--font-mali), var(--font-noto-thai), cursive;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html, body {
+  background: var(--color-cream);
+  color: var(--color-cocoa);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.card {
+  background: #fff;
+  border-radius: 24px;
+  padding: 16px;
+  box-shadow: 0 4px 14px rgba(74, 59, 54, 0.06);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.btn-dark {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 20px; border-radius: 9999px;
+  background: var(--color-cocoa); color: var(--color-cream); font-weight: 600;
 }
+.btn-dark:disabled { opacity: .5; }
+
+.btn-soft {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: 0 16px; border-radius: 9999px;
+  background: var(--color-mint-strong); color: var(--color-cocoa); font-weight: 600;
+}
+
+.chip {
+  min-height: 36px; padding: 0 12px; border-radius: 18px; font-size: 14px; font-weight: 500;
+  background: var(--color-sand); color: var(--color-cocoa);
+}
+.chip[aria-pressed="true"] { background: var(--color-cocoa); color: var(--color-cream); }
+
+.field {
+  width: 100%; min-height: 48px; padding: 0 14px; border-radius: 16px;
+  background: #fff; border: 1.5px solid var(--color-line); color: var(--color-cocoa); font-size: 16px;
+}
+.field:focus { outline: 2px solid var(--color-rose); outline-offset: 1px; }
+
+:focus-visible { outline: 2px solid var(--color-rose); outline-offset: 2px; }

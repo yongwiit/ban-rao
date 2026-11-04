@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# บ้านเรา 🏠
 
-## Getting Started
+แอปของบ้าน พ่ออั้ม แม่แพ็ค และน้องเพิร์ล: ปฏิทินนัดหมาย ลิสต์ซื้อของ จดรายจ่าย งบ บิลประจำ เคลียร์ยอดกัน และอ่านสลิปโอนเงินอัตโนมัติ
+ใช้ได้ทั้ง iPhone และ Android ผ่านเว็บ แล้ว "เพิ่มไปที่หน้าจอหลัก" ให้เหมือนแอป
 
-First, run the development server:
+## ตั้งค่าครั้งแรก (ทำครั้งเดียว ประมาณ 20 นาที)
 
+### 1. ฐานข้อมูล Supabase (ฟรี)
+1. สมัครที่ https://supabase.com แล้วกด New project (เลือก Region: Singapore)
+2. เมนู **SQL Editor** > New query > เปิดไฟล์ `supabase/migrations/0001_init.sql` คัดลอกทั้งหมดไปวาง > กด **Run**
+3. เมนู **Authentication > Sign In / Providers > Email** ปิด **Confirm email** (จะได้สมัครแล้วใช้ได้เลย)
+4. เมนู **Project Settings > API** จดค่า `Project URL` และ `anon public key` ไว้
+
+### 2. คีย์อ่านสลิป (Anthropic)
+1. สมัครที่ https://console.anthropic.com เติมเครดิต (อ่านสลิปใบละไม่ถึง 1 บาทโดยประมาณ)
+2. เมนู API Keys > Create Key แล้วจดไว้
+
+### 3. ขึ้นเว็บด้วย Vercel (ฟรี)
+1. สมัคร https://vercel.com ด้วยบัญชี GitHub
+2. Add New > Project > เลือก repo `ban-rao` > Import
+3. ใส่ Environment Variables 3 ตัว:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `ANTHROPIC_API_KEY`
+4. กด Deploy จะได้ลิงก์ เช่น `ban-rao.vercel.app`
+
+### 4. ใช้งานบนมือถือ
+- **iPhone (Safari):** เปิดลิงก์ > ปุ่มแชร์ > "เพิ่มไปยังหน้าจอโฮม"
+- **Android (Chrome):** เปิดลิงก์ > เมนู ⋮ > "เพิ่มลงในหน้าจอหลัก" / "ติดตั้งแอป"
+- คนแรก: สมัคร > เลือก "พ่ออั้ม" หรือ "แม่แพ็ค" > **สร้างบ้านใหม่** จะได้รหัสบ้าน 6 ตัว
+- คนที่สอง: สมัคร > เลือกบทบาท > **เข้าร่วมบ้าน** ใส่รหัสบ้าน
+
+## ฟีเจอร์
+- **วันนี้:** นัดวันนี้ ของที่ต้องซื้อ บิลใกล้ครบ ยอดใช้เดือนนี้
+- **ปฏิทิน:** นัดของพ่ออั้ม แม่แพ็ค น้องเพิร์ล หรือทั้งบ้าน แยกสี คอมเมนต์ได้ ตั้งเป็น "เห็นคนเดียว" ได้ (เช่น เซอร์ไพรส์วันครบรอบ)
+- **ซื้อของ:** หลายลิสต์ ติ๊กแล้วอีกฝั่งเห็นทันที
+- **เงิน:** จดเอง/จากสลิป กองกลางหรือออกก่อนแล้วแบ่งครึ่ง เปิดปิดงบได้ บิลประจำคำนวณเงินเก็บต่อเดือน
+- **สลิป:** อัปโหลดหลายใบ AI อ่านยอด วันที่ ผู้รับ ให้ตรวจแล้วกดบันทึก สลิปซ้ำไม่บันทึกสองรอบ
+
+## สำหรับนักพัฒนา
 ```bash
+cp .env.example .env.local   # ใส่ค่า
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js 16 + Supabase (Auth, Postgres RLS, Realtime) + Claude API สำหรับอ่านสลิป (`src/app/api/slip/route.ts`)
+ชื่อและสีของคนในบ้านแก้ที่ `src/lib/family.ts`

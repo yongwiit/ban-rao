@@ -1,0 +1,17 @@
+import type { BillPeriod, Category, PaidFrom, Role, Who } from "./family";
+
+export type EventRow = {
+  id: string; title: string; starts_at: string; all_day: boolean; who: Who;
+  note: string | null; private: boolean; created_by: string;
+};
+export type CommentRow = { id: string; event_id: string; body: string; created_by: string; created_at: string };
+export type ListRow = { id: string; name: string; sort: number };
+export type ItemRow = { id: string; list_id: string; name: string; done: boolean; created_by: string; created_at: string };
+export type ExpenseRow = {
+  id: string; amount: number; spent_at: string; merchant: string; category: Category; paid_from: PaidFrom;
+  private: boolean; status: "pending" | "confirmed"; slip_ref: string | null; bank: string | null;
+  note: string | null; created_by: string; created_at: string;
+};
+export type BillRow = { id: string; name: string; amount: number; period: BillPeriod; due_day: number | null; active: boolean };
+export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
+export type MemberRow = { user_id: string; role: Role };
