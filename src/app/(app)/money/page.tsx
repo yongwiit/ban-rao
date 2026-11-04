@@ -99,6 +99,7 @@ export default function MoneyPage() {
 
   // แท็บของฉัน: รวมรายการที่รูดบัตรของฉันในกราฟย้อนหลัง (ตามเดือนที่รูด)
   // ส่วนที่เรียกเก็บแล้ว (ยืนยันแล้ว) ถูกจดเป็นรายจ่ายของคนอื่น/ของบ้านไปแล้ว จึงไม่นับซ้ำ
+  const mineWeight = (e: HistRow) => mineOnly(e) ? 1 : !e.private && !e.card_charge_id ? myShare(e, role) : 0;
   const cardRows: HistRow[] = [];
   if (scope === "mine") {
     for (let i = 0; i < 6; i++) {
@@ -111,13 +112,13 @@ export default function MoneyPage() {
         let v = inst ? (k >= 0 && k < c.months ? Number(c.amount) / c.months : 0) : chargeInMonth(c, d.getFullYear(), d.getMonth());
         if (v <= 0) continue;
         if (c.bill_to && c.bill_status === "accepted") v = c.bill_mode === "home" ? 0 : Math.max(0, v - Number(c.bill_amount ?? 0) / (inst ? c.months : 1));
-        if (v > 0) cardRows.push({ amount: v, spent_at: d.toISOString(), category: c.category ?? "other", paid_from: "personal", private: false, created_by: userId });
+        if (v > 0) cardRows.push({ amount: v, spent_at: d.toISOString(), category: c.category ?? "other", paid_from: "personal", private: false, created_by: userId, other_share: null, card_charge_id: null });
       }
     }
   }
 
   const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
-    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} extra={cardRows} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
+    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} extra={cardRows} weight={scope === "mine" ? mineWeight : undefined} note={scope === "mine" ? "นับตามวันที่ใช้/รูดบัตร (ผ่อนนับเดือนละงวด) รวมส่วนของฉันในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน · การ์ดด้านบนนับบิลบัตรตอนจ่าย ตัวเลขจึงอาจไม่เท่ากัน" : undefined} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
     settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
       <section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}

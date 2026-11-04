@@ -107,10 +107,14 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
   items.sort((a, b) => (a.paid === b.paid ? byDate(a, b) : a.paid ? 1 : -1));
   const cardPaid = items.filter((i) => i.paid && i.key.startsWith("card-")).reduce((s, i) => s + i.amount, 0);
   const paidCount = items.filter((i) => i.paid).length;
-  const sharePaid = items.filter((i) => i.paid && i.key.startsWith("share-")).reduce((s, i) => s + i.amount, 0);
+  // ส่วนของฉันในรายจ่ายบ้านเดือนนี้ที่พ่อ/แม่ออกก่อน (ทุกรายการ ไม่ใช่แค่ค่าใช้จ่ายประจำ)
+  // รายการที่มาจากบัตรไม่นับ เพราะนับในบิลบัตรแล้ว
+  const sharePaid = scope === "mine" ? monthRows.filter((e) => !e.private && !e.card_charge_id).reduce((s, e) => s + Number(e.amount) * myShare(e, role), 0) : 0;
+  // บิลบัตรที่จ่ายแล้วมีส่วนที่เรียกเก็บคนในบ้านไว้ → จะได้คืน
+  const refund = cardBills.reduce((s, b) => s + b.refund, 0);
   const reserve = items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0);
   const used = spent + cardPaid + sharePaid;
-  const left = base - used - reserve;
+  const left = base - used - reserve + refund;
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
   const seg = (v: number) => `${Math.min(100, base > 0 ? (v / base) * 100 : 0)}%`;
   const [showAll, setShowAll] = useState(false);
@@ -144,8 +148,9 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
             <button onClick={useBudget ? onBudget : () => setOpen(true)} className="flex justify-between text-left">
               <span>{useBudget ? "งบเดือนนี้" : scope === "home" ? "รายได้บ้าน" : "รายได้ของฉัน"} <span className="text-xs text-muted underline">{useBudget ? "ปรับงบ" : "แก้"}</span></span><span>{baht(base)}</span>
             </button>
-            <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว{cardPaid > 0 ? " (รวมบิลบัตรที่จ่ายแล้ว)" : ""}</span><span>− {baht(used)} · {pct(used, base)}%</span></span>
+            <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว{cardPaid > 0 || sharePaid > 0 ? ` (รวม${[cardPaid > 0 ? "บิลบัตรที่จ่ายแล้ว" : "", sharePaid > 0 ? "ส่วนของฉันในรายจ่ายบ้าน" : ""].filter(Boolean).join(" + ")})` : ""}</span><span>− {baht(used)} · {pct(used, base)}%</span></span>
             {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ยังต้องจ่าย</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
+            {refund > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-mint" />ได้คืน (รูดบัตรแล้วเรียกเก็บคนในบ้าน)</span><span>+ {baht(refund)}</span></span>}
           </div>
         </>
       )}
@@ -178,7 +183,7 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
           {items.length > 6 && <button className="self-start text-xs text-muted underline" onClick={() => setShowAll(!showAll)}>{showAll ? "ย่อ" : `ดูอีก ${items.length - 6} รายการ`}</button>}
         </div>
       )}
-      {scope === "mine" && <span className="text-xs text-muted">นับเฉพาะของคุณ: รายการ &quot;จ่ายส่วนตัว&quot;/&quot;เห็นคนเดียว&quot; บัตรของคุณ และค่าใช้จ่ายประจำส่วนตัว</span>}
+      {scope === "mine" && <span className="text-xs text-muted">นับเฉพาะของคุณ: รายการ &quot;จ่ายส่วนตัว&quot;/&quot;เห็นคนเดียว&quot; บิลบัตรของคุณ ค่าใช้จ่ายประจำส่วนตัว และส่วนของคุณในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน</span>}
       <Sheet open={open} onClose={() => setOpen(false)} title="รายได้ต่อเดือน">
         {open && <IncomeEditor rows={incomes.rows} people={people.list.filter((p) => !p.kid)} onChange={incomes.refresh} />}
       </Sheet>

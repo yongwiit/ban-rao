@@ -9,11 +9,11 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { ExpenseRow } from "@/lib/types";
 
-export type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
+export type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by" | "other_share" | "card_charge_id">;
 const MONTHS = 6;
 
 /** กราฟแท่งยอดใช้ย้อนหลัง 6 เดือน (แต่ละแท่งซ้อนสีตามหมวด) + แยกตามหมวดของเดือนที่เลือก */
-type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean; filter?: (e: Row) => boolean };
+type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean; filter?: (e: Row) => boolean; weight?: (e: Row) => number; note?: string };
 
 export function SpendHistory({ householdId, extra = [], ...view }: ViewProps & { householdId: string; extra?: Row[] }) {
   const now = new Date();
@@ -21,11 +21,11 @@ export function SpendHistory({ householdId, extra = [], ...view }: ViewProps & {
   const from = monthRange(first.getFullYear(), first.getMonth()).start;
   const to = monthRange(now.getFullYear(), now.getMonth()).end;
   const rows = useLive<Row>("expenses", householdId, () =>
-    supabase().from("expenses").select("amount, spent_at, category, paid_from, private, created_by").gte("spent_at", from).lt("spent_at", to), [from]);
+    supabase().from("expenses").select("amount, spent_at, category, paid_from, private, created_by, other_share, card_charge_id").gte("spent_at", from).lt("spent_at", to), [from]);
   return <SpendHistoryView rows={extra.length ? [...rows.rows, ...extra] : rows.rows} {...view} />;
 }
 
-export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, filter = isHouseholdSpend }: ViewProps & { rows: Row[] }) {
+export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, filter = isHouseholdSpend, weight, note }: ViewProps & { rows: Row[] }) {
   const now = new Date();
   const catInfo = useCategories();
   const [focus, setFocus] = useState<string | null>(null);
@@ -37,10 +37,13 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, fil
   const totals: Record<string, number> = {};
   const byCat: Record<string, Record<string, number>> = {};
   for (const e of rows) {
-    if (!filter(e)) continue;
+    // weight: สัดส่วนที่นับ (เช่น ส่วนของฉันในรายจ่ายบ้าน) ไม่ส่ง = นับเต็มตาม filter
+    const w = weight ? weight(e) : filter(e) ? 1 : 0;
+    if (w <= 0) continue;
+    const v = Number(e.amount) * w;
     const k = dayKey(e.spent_at).slice(0, 7);
-    totals[k] = (totals[k] ?? 0) + Number(e.amount);
-    (byCat[k] ??= {})[e.category] = (byCat[k][e.category] ?? 0) + Number(e.amount);
+    totals[k] = (totals[k] ?? 0) + v;
+    (byCat[k] ??= {})[e.category] = (byCat[k][e.category] ?? 0) + v;
   }
   const max = Math.max(1, budgetOn ? budget : 0, ...months.map((m) => totals[m.key] ?? 0));
   const selKey = `${selected.y}-${String(selected.m + 1).padStart(2, "0")}`;
@@ -116,6 +119,7 @@ export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, fil
           );
         })}
         {cats.length > 0 && <p className="text-xs text-muted">แตะหมวดเพื่อดูกราฟย้อนหลังเฉพาะหมวดนั้น</p>}
+        {note && <p className="text-xs text-muted">{note}</p>}
       </div>
     </section>
   );

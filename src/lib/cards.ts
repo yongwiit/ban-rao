@@ -114,16 +114,23 @@ export function cardSummary(card: CardRow, charges: ChargeRow[], today: string) 
 
 /** ยอดบัตรที่ครบกำหนดจ่ายในเดือนนั้น (y, m: 0-11) รวมทุกบัตร */
 /** บิลบัตรแต่ละใบที่ครบกำหนดจ่ายในเดือนนี้ (ปี y เดือน m แบบ 0–11) */
-export function cardBillsInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): { card: CardRow; due: Date; amount: number }[] {
+/** บิลบัตรที่ครบจ่ายในเดือน y/m · refund = ส่วนที่เรียกเก็บแล้วและอีกฝ่ายยืนยัน (จะได้คืน) */
+export function cardBillsInMonth(cards: CardRow[], charges: ChargeRow[], y: number, m: number): { card: CardRow; due: Date; amount: number; refund: number }[] {
   const target = mi(y, m);
-  const out: { card: CardRow; due: Date; amount: number }[] = [];
+  const out: { card: CardRow; due: Date; amount: number; refund: number }[] = [];
   for (const card of cards) {
     const mine = charges.filter((c) => c.card_id === card.id);
     for (let i = target - 2; i <= target; i++) {
       const due = dueOfStatement(card, i);
       if (mi(due.getFullYear(), due.getMonth()) !== target) continue;
       const amount = mine.reduce((s, c) => s + amountOn(card, c, i), 0);
-      if (amount > 0) out.push({ card, due, amount });
+      const refund = mine.reduce((s, c) => {
+        if (!c.bill_to || c.bill_status !== "accepted" || !(Number(c.amount) > 0)) return s;
+        // ของบ้าน: อีกฝ่ายคืนครึ่ง (ผ่านยอดเคลียร์กัน) · คนเดียว: คืนตามยอดที่เรียกเก็บ
+        const ratio = c.bill_mode === "home" ? 0.5 : Math.min(1, Number(c.bill_amount ?? c.amount) / Number(c.amount));
+        return s + amountOn(card, c, i) * ratio;
+      }, 0);
+      if (amount > 0) out.push({ card, due, amount, refund });
     }
   }
   return out;
