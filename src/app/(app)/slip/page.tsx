@@ -51,6 +51,7 @@ export default function SlipPage() {
   const [zoom, setZoom] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { warmUpOcr(); }, []);
+  const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key));
   const patch = (key: string, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
 
   async function onFiles(files: FileList | null) {
@@ -117,10 +118,13 @@ export default function SlipPage() {
                     <span className="absolute right-1 bottom-1 rounded-full bg-white/90 px-1 text-[10px]">🔍</span>
                   </button>
                 )}
-                <div className="flex items-center gap-2 text-sm">
+                <div className="flex flex-1 items-center gap-2 text-sm">
                   <Bunny size={36} happy={it.state === "ready"} />
                   {it.state === "reading" ? "กำลังอ่านสลิปให้นะ… (ครั้งแรกอาจใช้เวลาสักครู่)" : it.msg ?? "อ่านสลิปให้แล้ว ตรวจอีกทีก่อนบันทึกน้า"}
                 </div>
+                <button onClick={() => remove(it.key)} aria-label="ยกเลิกสลิปใบนี้" className="flex min-h-11 shrink-0 flex-col items-center justify-center rounded-2xl border border-line bg-cream px-2.5 text-xs text-muted">
+                  <span className="text-lg leading-none">✕</span>ยกเลิก
+                </button>
               </div>
               {it.draft && (
                 <ExpenseForm
@@ -132,6 +136,9 @@ export default function SlipPage() {
               )}
             </section>
           ))}
+          {open.length > 1 && (
+            <button onClick={() => setItems((xs) => xs.filter((x) => x.state === "saved"))} className="min-h-11 text-sm text-rose underline">ยกเลิกทั้งหมด {open.length} ใบที่ยังไม่บันทึก</button>
+          )}
           {savedCount > 0 && <p className="text-center text-sm text-muted">บันทึกไปแล้ว {savedCount} ใบ</p>}
           {zoom && (
             <button onClick={() => setZoom(null)} aria-label="ปิดรูป" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-cocoa/80 p-4">
