@@ -9,7 +9,7 @@ import { BillRequests } from "@/components/BillRequests";
 import { FixedCosts } from "@/components/FixedCosts";
 import { Reorderable, useSectionOrder } from "@/components/Reorder";
 import { CatIcon, useCategories } from "@/components/Categories";
-import { activeSub } from "@/lib/cards";
+import { activeSub, chargeInMonth } from "@/lib/cards";
 import { MonthCard } from "@/components/Income";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
@@ -18,7 +18,7 @@ import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
 import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
-import { SpendHistory } from "@/components/SpendHistory";
+import { SpendHistory, type Row as HistRow } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
 import { paidFromLabel, isHouseholdSpend } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
@@ -97,8 +97,23 @@ export default function MoneyPage() {
   const newDraft = (category: string): ExpenseDraft => ({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category, paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" });
   const list = month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e)));
 
+  // แท็บของฉัน: รวมรายการที่รูดบัตรของฉันในกราฟย้อนหลัง (ตามเดือนที่รูด)
+  // ส่วนที่เรียกเก็บแล้ว (ยืนยันแล้ว) ถูกจดเป็นรายจ่ายของคนอื่น/ของบ้านไปแล้ว จึงไม่นับซ้ำ
+  const cardRows: HistRow[] = [];
+  if (scope === "mine") {
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 15);
+      for (const c of cards.charges) {
+        let v = chargeInMonth(c, d.getFullYear(), d.getMonth());
+        if (v <= 0) continue;
+        if (c.bill_to && c.bill_status === "accepted") v = c.bill_mode === "home" ? 0 : Math.max(0, v - Number(c.bill_amount ?? 0));
+        if (v > 0) cardRows.push({ amount: v, spent_at: d.toISOString(), category: c.category ?? "other", paid_from: "personal", private: false, created_by: userId });
+      }
+    }
+  }
+
   const sections: Record<string, { label: string; node: React.ReactNode } | null> = {
-    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
+    history: { label: "📊 ย้อนหลัง 6 เดือน", node: <SpendHistory householdId={hid} extra={cardRows} selected={ym} onPick={setYm} budget={budget} budgetOn={scope === "home" && household.budget_enabled} filter={inScope} /> },
     settle: scope !== "home" ? null : { label: "💞 ยอดเคลียร์กัน", node: (
       <section className="card flex items-center gap-3">
         {owe >= 0 ? <Bear size={40} /> : <Bunny size={40} />}

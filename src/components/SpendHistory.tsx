@@ -9,20 +9,20 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import type { ExpenseRow } from "@/lib/types";
 
-type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
+export type Row = Pick<ExpenseRow, "amount" | "spent_at" | "category" | "paid_from" | "private" | "created_by">;
 const MONTHS = 6;
 
 /** กราฟแท่งยอดใช้ย้อนหลัง 6 เดือน (แต่ละแท่งซ้อนสีตามหมวด) + แยกตามหมวดของเดือนที่เลือก */
 type ViewProps = { selected: { y: number; m: number }; onPick: (ym: { y: number; m: number }) => void; budget: number; budgetOn: boolean; filter?: (e: Row) => boolean };
 
-export function SpendHistory({ householdId, ...view }: ViewProps & { householdId: string }) {
+export function SpendHistory({ householdId, extra = [], ...view }: ViewProps & { householdId: string; extra?: Row[] }) {
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth() - (MONTHS - 1), 1);
   const from = monthRange(first.getFullYear(), first.getMonth()).start;
   const to = monthRange(now.getFullYear(), now.getMonth()).end;
   const rows = useLive<Row>("expenses", householdId, () =>
     supabase().from("expenses").select("amount, spent_at, category, paid_from, private, created_by").gte("spent_at", from).lt("spent_at", to), [from]);
-  return <SpendHistoryView rows={rows.rows} {...view} />;
+  return <SpendHistoryView rows={extra.length ? [...rows.rows, ...extra] : rows.rows} {...view} />;
 }
 
 export function SpendHistoryView({ rows, selected, onPick, budget, budgetOn, filter = isHouseholdSpend }: ViewProps & { rows: Row[] }) {
