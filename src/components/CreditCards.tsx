@@ -123,18 +123,11 @@ export function CreditCards() {
                 <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs ${cutToday ? "bg-butter font-semibold" : "bg-white/70"}`}>{cut} · จ่าย {day(s.cycleDue)}</span>
               </span>
             ) : nothing ? (
-              s.cycleAmount > 0 ? (
-                // บิลรอบก่อนไม่มียอด → แสดงบิลที่กำลังจะตัด (เช่น ตัดรอบวันนี้)
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm">ต้องจ่าย <b className="font-display text-xl">{baht(s.cycleAmount)}</b> บาท</span>
-                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs font-semibold">{cut} · จ่าย {day(s.cycleDue)}</span>
-                </span>
-              ) : (
-                <span className="flex items-baseline justify-between gap-2 opacity-70">
-                  <span className="text-sm">ยังไม่มียอดต้องจ่าย</span>
-                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">{cutToday ? "ตัดบิลวันนี้" : `ตัดรอบ ${day(s.cycleEnd)}`}</span>
-                </span>
-              )
+              // ยังไม่มีบิลที่ตัดแล้ว (เช่น เพิ่งเริ่มจดบัตร) → ไม่เอายอดรอบที่กำลังใช้มาโชว์ซ้ำกับแท็บรอบถัดไป
+              <span className="flex flex-col gap-0.5 opacity-80">
+                <span className="text-sm">ยังไม่มีบิลที่ตัดแล้ว</span>
+                <span className="text-xs text-muted">{s.cycleAmount > 0 ? `รอบนี้ใช้ไป ${baht(s.cycleAmount)} บาท · ` : ""}{cutToday ? "ตัดบิลวันนี้" : `จะตัดบิล ${day(s.cycleEnd)}`} · <span className="whitespace-nowrap">ดูที่แท็บรอบถัดไป</span></span>
+              </span>
             ) : (
               <span className={`flex items-baseline justify-between gap-2 ${paid ? "opacity-60" : ""}`}>
                 <span className="text-sm">{paid ? "จ่ายแล้ว" : "ต้องจ่าย"} <b className={`font-display text-xl ${paid ? "line-through" : ""}`}>{baht(s.last.amount)}</b> บาท</span>
