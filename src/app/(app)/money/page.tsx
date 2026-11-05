@@ -117,7 +117,9 @@ export default function MoneyPage() {
 
   // ยอดสรุปตอนซ่อนกล่อง: กล่องค่าใช้จ่าย = ยอดรวม · กล่องที่ต้องจ่าย = ยอดค้าง
   const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
-  const owed = (v: number) => (v > 0 ? { summary: `ค้าง ${baht(v)} บาท`, tone: "due" as const } : { summary: "ไม่มียอดค้างชำระ", tone: "ok" as const });
+  // เดือนหน้า: ยังไม่ถึงกำหนด จึงไม่ใช่ "ค้าง" แต่เป็นยอดที่จะต้องจ่าย
+  const isFuture = ym.y * 12 + ym.m > now.getFullYear() * 12 + now.getMonth();
+  const owed = (v: number) => (v > 0 ? { summary: `${isFuture ? "ต้องจ่าย" : "ค้าง"} ${baht(v)} บาท`, tone: "due" as const } : { summary: isFuture ? "ไม่มียอดที่ต้องจ่าย" : "ไม่มียอดค้างชำระ", tone: "ok" as const });
   const histTotal = scope === "mine"
     ? month.rows.reduce((s, e) => s + Number(e.amount) * mineWeight(e), 0) + cardRows.filter((r) => dayKey(r.spent_at).slice(0, 7) === ymKey).reduce((s, r) => s + r.amount, 0)
     : total;

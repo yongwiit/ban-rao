@@ -144,9 +144,9 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
       {header}
       {collapsed.has("month") ? (
         <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded={false} className="flex items-center gap-2 text-left">
-          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
           <span className={`font-display text-xl font-bold ${base > 0 && left < 0 ? "text-rose" : ""}`}>{baht(base === 0 ? used : Math.abs(left))} บาท</span>
-          {reserve > 0 && <span className="text-xs font-semibold text-rose">ค้าง {baht(reserve)}</span>}
+          {reserve > 0 && <span className="text-xs font-semibold text-rose">{isThisMonth ? "ค้าง" : "ต้องจ่าย"} {baht(reserve)}</span>}
           <span className="text-muted" aria-hidden>▾</span>
         </button>
       ) : <>
@@ -163,7 +163,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
         <>
           <div className="flex items-end justify-between gap-2">
             <span className="flex flex-col">
-              <span className="text-sm">{isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+              <span className="text-sm">{isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
               <span className={`font-display text-[32px] font-bold leading-tight ${left < 0 ? "text-rose" : ""}`}>{baht(Math.abs(left))} <span className="text-base font-medium">บาท</span></span>
             </span>
             {isThisMonth && left > 0 && daysLeft > 0 && <span className="mb-1 rounded-xl bg-white/80 px-2.5 py-1 text-sm">วันละ ~<b>{baht(left / daysLeft)}</b> · {daysLeft} วัน</span>}
