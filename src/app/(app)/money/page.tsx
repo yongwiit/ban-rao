@@ -8,19 +8,19 @@ import { CreditCards, useCards } from "@/components/CreditCards";
 import { BillRequests } from "@/components/BillRequests";
 import { FixedCosts } from "@/components/FixedCosts";
 import { Reorderable, useCollapsed, useSectionOrder } from "@/components/Reorder";
-import { CatIcon, useCategories } from "@/components/Categories";
-import { activeSub, cardBillsInMonth, chargeInMonth, isSub } from "@/lib/cards";
+import { activeSub, cardBillsInMonth } from "@/lib/cards";
 import { MonthCard } from "@/components/Income";
+import { MonthList, buildMonthItems, cardItemsInMonth } from "@/components/MonthList";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
 import { validPromptPay } from "@/lib/promptpay";
 import { useHousehold } from "@/components/Household";
 import { Sheet } from "@/components/Sheet";
 import { Bear, Bunny } from "@/components/Mascots";
-import { ChevronIcon, LockIcon, TrashIcon, UploadIcon } from "@/components/Icons";
+import { ChevronIcon, TrashIcon, UploadIcon } from "@/components/Icons";
 import { SpendHistory, type Row as HistRow } from "@/components/SpendHistory";
 import { ExpenseForm, toDraftTime, type ExpenseDraft } from "@/components/ExpenseForm";
-import { paidFromLabel, isHouseholdSpend } from "@/lib/family";
+import { isHouseholdSpend } from "@/lib/family";
 import { baht, dayKey, monthRange, thaiDate, thaiTime } from "@/lib/format";
 import { momOwesDad, myShare } from "@/lib/settle";
 import { supabase } from "@/lib/supabase";
@@ -63,7 +63,6 @@ export default function MoneyPage() {
     settlements: settlements.rows.map((s) => ({ ...s, amount: Number(s.amount) })),
   });
   const cards = useCards(hid);
-  const cats = useCategories();
   const today = dayKey(now);
   const activeBills = bills.rows.filter((b) => b.active && (scope === "home" ? b.paid_from !== "personal" : b.paid_from === "personal" && b.created_by === userId));
   // แท็บของฉัน: ค่าใช้จ่ายบ้านที่พ่อ/แม่ออกก่อน → แสดงส่วนของฉัน
@@ -97,27 +96,16 @@ export default function MoneyPage() {
   }
 
   const newDraft = (category: string): ExpenseDraft => ({ amount: "", date: dayKey(now), time: thaiTime(now), merchant: "", category, paid_from: scope === "home" ? "pot" : "personal", private: false, note: "" });
-  const list = month.rows.filter((e) => (scope === "home" ? !(e.paid_from === "personal" && e.created_by !== userId) : mineOnly(e)));
 
   // แท็บของฉัน: รวมรายการที่รูดบัตรของฉันในกราฟย้อนหลัง (ตามเดือนที่รูด)
   // ส่วนที่เรียกเก็บแล้ว (ยืนยันแล้ว) ถูกจดเป็นรายจ่ายของคนอื่น/ของบ้านไปแล้ว จึงไม่นับซ้ำ
   const mineWeight = (e: HistRow) => mineOnly(e) ? 1 : !e.private && !e.card_charge_id ? myShare(e, role) : 0;
-  const cardRows: HistRow[] = [];
-  if (scope === "mine") {
-    for (let i = 0; i < 6; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 15);
-      for (const c of cards.charges) {
-        // ผ่อน: นับเดือนละงวด (ยอด ÷ จำนวนเดือน) ตั้งแต่เดือนที่รูด ไม่ใช่ยอดเต็มเดือนแรก
-        const [cy, cm] = c.charged_on.split("-").map(Number);
-        const k = (d.getFullYear() - cy) * 12 + d.getMonth() - (cm - 1);
-        const inst = c.months > 1 && !isSub(c);
-        let v = inst ? (k >= 0 && k < c.months ? Number(c.amount) / c.months : 0) : chargeInMonth(c, d.getFullYear(), d.getMonth());
-        if (v <= 0) continue;
-        if (c.bill_to && c.bill_status === "accepted") v = c.bill_mode === "home" ? 0 : Math.max(0, v - Number(c.bill_amount ?? 0) / (inst ? c.months : 1));
-        if (v > 0) cardRows.push({ amount: v, spent_at: d.toISOString(), category: c.category ?? "other", paid_from: "personal", private: false, created_by: userId, other_share: null, card_charge_id: null });
-      }
-    }
-  }
+  const myCardList = cards.cards.filter((c) => c.owner === role || c.created_by === userId);
+  const cardRows: HistRow[] = scope !== "mine" ? [] : Array.from({ length: 6 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - i, 15))
+    .flatMap((d) => cardItemsInMonth(myCardList, cards.charges, d.getFullYear(), d.getMonth()))
+    .map((it) => ({ amount: it.amount, spent_at: it.at.toISOString(), category: it.category, paid_from: "personal" as const, private: false, created_by: userId, other_share: null, card_charge_id: null }));
+  const listItems = buildMonthItems({ scope, rows: month.rows, cardItems: scope === "mine" ? cardItemsInMonth(myCardList, cards.charges, ym.y, ym.m) : [], role, userId, people });
+  const listTotal = listItems.reduce((s, i) => s + i.amount, 0);
 
   // ยอดสรุปตอนซ่อนกล่อง: กล่องค่าใช้จ่าย = ยอดรวม · กล่องที่ต้องจ่าย = ยอดค้าง
   const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
@@ -148,31 +136,8 @@ export default function MoneyPage() {
     cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", ...owed(cardDue), node: <CreditCards /> },
     goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
     fixed: { label: scope === "home" ? "📌 ค่าใช้จ่ายประจำของบ้าน" : "📌 ค่าใช้จ่ายประจำของฉัน", ...owed(fixedDue), node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} cardName={Object.fromEntries(cards.cards.map((c) => [c.id, c.name]))} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
-    list: { label: "🧾 รายการเดือนนี้", summary: `${list.length} รายการ · ${baht(total)} บาท`, node: (
-      <section className="card flex flex-col gap-2.5">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-[17px] font-semibold">รายการเดือนนี้</h2>
-          <button onClick={() => setEditing(newDraft(scope === "home" ? "home" : "food"))} className="min-h-9 px-1 text-sm text-muted">+ จดเอง</button>
-        </div>
-        {list.length === 0 && <p className="text-sm text-muted">ยังไม่มีรายการ</p>}
-        {list.map((e) => {
-          const cat = cats.get(e.category);
-          return (
-            <button key={e.id} onClick={() => edit(e)} className="flex items-center gap-2.5 text-left text-sm">
-              <span className="relative">
-                <CatIcon icon={cat.icon} size={36} />
-                {e.private && <span className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5"><LockIcon size={12} /></span>}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-semibold">{e.merchant || cat.label}</span>
-                <span className="text-xs text-muted">{thaiDate(e.spent_at, { day: "numeric", month: "short" })} {thaiTime(e.spent_at)} · {cat.label} · {paidFromLabel(e.paid_from, people)}{e.slip_ref ? ` · สลิป${e.bank ? ` ${e.bank}` : ""} …${e.slip_ref.slice(-4)}` : ""}{e.private ? " · เห็นคนเดียว" : ""}{e.note === "หักอัตโนมัติ" ? " · หักอัตโนมัติ" : ""}{e.paid_from === "personal" && scope === "home" ? " · ไม่นับในยอดบ้าน" : ""}</span>
-              </span>
-              {e.status === "pending" && <span className="rounded-lg bg-butter px-2 py-0.5 text-[11px] font-semibold">รอตรวจ</span>}
-              <span className="font-semibold">{baht(Number(e.amount))}</span>
-            </button>
-          );
-        })}
-      </section>
+    list: { label: "🧾 รายการเดือนนี้", summary: `${listItems.length} รายการ · ${baht(listTotal)} บาท`, node: (
+      <MonthList scope={scope} items={listItems} onEdit={edit} onAdd={() => setEditing(newDraft(scope === "home" ? "home" : "food"))} />
     ) },
   };
 
