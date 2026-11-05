@@ -9,7 +9,7 @@ import { useCollapsed } from "./Reorder";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
-import { cardBillsInMonth, cardSummary, type IncomeRow } from "@/lib/cards";
+import { cardBillsInMonth, cardSummary, incomeInMonth, type IncomeRow } from "@/lib/cards";
 import { fundPerMonth, isDueMonth, isFund, isLoan } from "@/lib/fund";
 import { useCategories } from "./Categories";
 import type { IconKey } from "@/lib/categoryIcons";
@@ -59,7 +59,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
   const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
 
   const myIncome = (i: IncomeRow) => i.created_by === userId || i.who === role;
-  const inc = incomes.rows.filter((i) => (scope === "home" ? !i.private : myIncome(i)));
+  const inc = incomes.rows.filter((i) => incomeInMonth(i, ym.y, ym.m) && (scope === "home" ? !i.private : myIncome(i)));
   const income = inc.reduce((s, i) => s + Number(i.amount), 0);
   const useBudget = scope === "home" && household.budget_enabled && household.monthly_budget > 0;
   const base = useBudget ? Number(household.monthly_budget) : income;
@@ -154,7 +154,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
         <>
           <span className="font-display text-[30px] font-bold">{baht(used)} <span className="text-base font-medium">บาท ใช้ไปแล้ว</span></span>
           <button onClick={() => setOpen(true)} className="rounded-2xl bg-white/70 p-3 text-left text-sm">
-            {scope === "home" && incomes.rows.some((i) => i.private)
+            {scope === "home" && incomes.rows.some((i) => i.private && incomeInMonth(i, ym.y, ym.m))
               ? <>รายได้ที่ใส่ไว้ตั้งเป็น &quot;เห็นคนเดียว&quot; จึงไม่รวมในยอดบ้าน · <b className="underline">แตะเพื่อแก้</b> หรือเปิด &quot;ใช้งบ&quot;</>
               : <>💼 <b className="underline">ตั้งเงินเดือน</b> แล้วแอปจะบอกว่าเดือนนี้เหลือใช้ได้จริงกี่บาท หลังกันค่าใช้จ่ายประจำและบิลบัตรไว้แล้ว</>}
           </button>
@@ -246,46 +246,71 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
   const [priv, setPriv] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const { people: all } = useHousehold();
+  // แก้ยอด = ใช้ตั้งแต่เดือนนี้ · เดือนก่อนๆ ยังคิดด้วยยอดเดิม
+  const now = new Date();
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const monthStart = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+  const prevEnd = ymd(new Date(now.getFullYear(), now.getMonth(), 0));
+  const current = rows.filter((r) => incomeInMonth(r, now.getFullYear(), now.getMonth()));
+  const history = rows.filter((r) => r.valid_to && r.valid_to < monthStart).sort((a, b) => (b.valid_to ?? "").localeCompare(a.valid_to ?? ""));
+  const started = (r: IncomeRow) => (r.valid_from ?? "2000-01-01") < monthStart;
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const n = Number(amount.replace(/,/g, ""));
     if (!(n > 0)) return setMsg("ใส่ยอดต่อเดือนก่อนนะ");
-    const { error } = await supabase().from("incomes").insert({ who, label: label.trim() || "เงินเดือน", amount: n, private: priv });
+    const { error } = await supabase().from("incomes").insert({ who, label: label.trim() || "เงินเดือน", amount: n, private: priv, valid_from: monthStart });
     if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
     setAmount(""); setPriv(false); onChange();
     setMsg(`เพิ่มแล้ว ✓ ${all.get(who).name} ${baht(n)} บาท/เดือน${priv ? " (เห็นคนเดียว ดูได้ที่แท็บ \"ของฉัน\")" : ""}`);
   }
   async function update(r: IncomeRow, v: string) {
     const n = Number(v.replace(/,/g, ""));
-    if (n > 0 && n !== Number(r.amount)) { await supabase().from("incomes").update({ amount: n }).eq("id", r.id); onChange(); }
+    if (!(n > 0) || n === Number(r.amount)) return;
+    if (started(r)) {
+      // ปิดยอดเดิมไว้ที่สิ้นเดือนก่อน แล้วเริ่มยอดใหม่เดือนนี้
+      await supabase().from("incomes").update({ valid_to: prevEnd }).eq("id", r.id);
+      await supabase().from("incomes").insert({ who: r.who, label: r.label, amount: n, private: r.private, valid_from: monthStart });
+      setMsg(`บันทึกแล้ว ✓ ${baht(n)} บาท ใช้ตั้งแต่เดือนนี้ · เดือนก่อนยังคิดที่ ${baht(Number(r.amount))}`);
+    } else await supabase().from("incomes").update({ amount: n }).eq("id", r.id);
+    onChange();
   }
   async function togglePrivate(r: IncomeRow) {
     await supabase().from("incomes").update({ private: !r.private }).eq("id", r.id);
     onChange();
   }
-  async function remove(id: string) {
-    await supabase().from("incomes").delete().eq("id", id);
+  async function remove(r: IncomeRow) {
+    // เคยใช้ในเดือนก่อน → หยุดตั้งแต่เดือนนี้ (เดือนเก่าไม่เปลี่ยน)
+    if (started(r)) await supabase().from("incomes").update({ valid_to: prevEnd }).eq("id", r.id);
+    else await supabase().from("incomes").delete().eq("id", r.id);
     onChange();
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {rows.length > 0 && (
+      {current.length > 0 && (
         <div className="flex flex-col gap-2">
-          {rows.map((r) => (
+          {current.map((r) => (
             <div key={r.id} className="flex flex-col gap-1.5 rounded-2xl bg-sand p-3 text-sm">
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate font-semibold">{all.get(r.who).name} · {r.label}</span>
                 <span className="w-32 shrink-0"><input className="field min-h-10 text-right" inputMode="decimal" aria-label={`ยอด${r.label}`} defaultValue={String(Number(r.amount))} onBlur={(e) => update(r, e.target.value)} /></span>
-                <button aria-label="ลบ" onClick={() => remove(r.id)} className="min-h-10 px-2 text-muted">✕</button>
+                <button aria-label="ลบ" onClick={() => remove(r)} className="min-h-10 px-2 text-muted">✕</button>
               </div>
               <button type="button" onClick={() => togglePrivate(r)} className="flex min-h-9 items-center gap-1.5 self-start text-xs">
                 {r.private ? <><LockIcon />เห็นคนเดียว (ไม่รวมในยอดบ้าน) · <b className="underline">แตะเพื่อให้รวมในยอดบ้าน</b></> : <>🏠 รวมในยอดบ้าน · <span className="underline">แตะเพื่อเปลี่ยนเป็นเห็นคนเดียว</span></>}
               </button>
             </div>
           ))}
-          <p className="text-xs text-muted">แตะตัวเลขเพื่อแก้ · ใส่เป็นยอดต่อเดือน (หลังหักภาษี/ประกันสังคมจะเห็นภาพจริงกว่า)</p>
+          <p className="text-xs text-muted">แตะตัวเลขเพื่อแก้ · ใส่เป็นยอดต่อเดือน (หลังหักภาษี/ประกันสังคมจะเห็นภาพจริงกว่า) · เงินเดือนขึ้น แก้ได้เลย เดือนก่อนๆ ยังคิดด้วยยอดเดิม</p>
+        </div>
+      )}
+      {history.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-2xl bg-white/70 p-3 text-xs text-muted">
+          <span className="font-semibold text-cocoa">📜 ยอดเดิม (ใช้คิดเดือนก่อนๆ)</span>
+          {history.slice(0, 6).map((r) => (
+            <span key={r.id} className="flex justify-between"><span>{all.get(r.who).name} · {r.label} · ถึง {thaiDate(new Date(r.valid_to + "T12:00:00"), { month: "short", year: "2-digit" })}</span><span>{baht(Number(r.amount))}</span></span>
+          ))}
         </div>
       )}
       <form onSubmit={add} className="flex flex-col gap-3 rounded-2xl border border-line bg-white p-3">
@@ -297,7 +322,7 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
           <input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} />
           <LockIcon />เห็นคนเดียว (ไม่รวมในยอดบ้าน ดูได้ที่ &quot;ของฉัน&quot;)
         </label>
-        {msg && <p role="status" className={`text-sm ${msg.startsWith("เพิ่มแล้ว") ? "text-[#3F8A5F]" : "text-rose"}`}>{msg}</p>}
+        {msg && <p role="status" className={`text-sm ${msg.includes("แล้ว ✓") ? "text-[#3F8A5F]" : "text-rose"}`}>{msg}</p>}
         <button className="btn-dark">เพิ่ม</button>
       </form>
     </div>

@@ -17,7 +17,12 @@ export type ChargeRow = {
 export const isSub = (c: Pick<ChargeRow, "repeat">) => !!c.repeat && c.repeat !== "none";
 /** subscription ที่ยังใช้อยู่ ณ วันนี้ */
 export const activeSub = (c: ChargeRow, today: string) => isSub(c) && c.charged_on <= today && (!c.ended_on || c.ended_on >= today);
-export type IncomeRow = { id: string; who: string; label: string; amount: number; private: boolean; created_by: string };
+export type IncomeRow = { id: string; who: string; label: string; amount: number; private: boolean; created_by: string; valid_from?: string; valid_to?: string | null };
+/** รายได้นี้ใช้ในเดือน y/m (0–11) ไหม · เงินเดือนขึ้นแล้วเดือนเก่ายังใช้ยอดเดิม */
+export function incomeInMonth(i: Pick<IncomeRow, "valid_from" | "valid_to">, y: number, m: number): boolean {
+  const first = ymdOf(new Date(y, m, 1)), last = ymdOf(new Date(y, m + 1, 0));
+  return (i.valid_from ?? "2000-01-01") <= last && (!i.valid_to || i.valid_to >= first);
+}
 
 /** เดือนเป็นเลขลำดับ (ปี*12 + เดือน 0-11) เพื่อเทียบรอบง่ายๆ */
 type Mi = number;
