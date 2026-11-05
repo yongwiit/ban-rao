@@ -6,6 +6,12 @@ import { CategoryPicker } from "./Categories";
 import { useHousehold } from "./Household";
 import { supabase } from "@/lib/supabase";
 import { LockIcon } from "./Icons";
+import { useLive } from "@/lib/useLive";
+import { monthRange } from "@/lib/format";
+import { matchBill } from "@/lib/billMatch";
+import type { BillRow } from "@/lib/types";
+
+const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
 export type ExpenseDraft = {
   id?: string;
@@ -42,8 +48,19 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
   const [d, setD] = useState<ExpenseDraft>(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const { people } = useHousehold();
+  const { people, household, userId } = useHousehold();
   const [paidTouched, setPaidTouched] = useState(false);
+  // จดใหม่ที่ไม่ได้มาจากปุ่ม "จด" ของค่าใช้จ่ายประจำ → หาค่าประจำที่ตรงกันให้อัตโนมัติ (กันนับซ้ำ)
+  const canLink = !d.id && !initial.bill_id;
+  const [linkOff, setLinkOff] = useState(false);
+  const [yy, mm] = d.date.split("-").map(Number);
+  const range = monthRange(yy || 2000, (mm || 1) - 1);
+  const bills = useLive<BillRow>("bills", canLink ? household?.id : undefined, () =>
+    supabase().from("bills").select("*").eq("active", true).eq("period", "monthly"), []);
+  const recorded = useLive<{ bill_id: string | null }>("expenses", canLink ? household?.id : undefined, () =>
+    supabase().from("expenses").select("bill_id").not("bill_id", "is", null).gte("spent_at", range.start).lt("spent_at", range.end), [range.start]);
+  const match = canLink ? matchBill(bills.rows, recorded.rows.map((r) => r.bill_id), d, userId) : null;
+  const link = match && !linkOff ? match : null;
   const set = <K extends keyof ExpenseDraft>(k: K, v: ExpenseDraft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   async function save(e: React.FormEvent) {
@@ -62,8 +79,8 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
       status: "confirmed" as const,
       slip_ref: d.slip_ref ?? null,
       bank: d.bank ?? null,
-      ...(d.bill_id && !d.id ? { bill_id: d.bill_id } : {}),
-      ...(d.other_share != null && !d.id ? { other_share: d.other_share } : {}),
+      ...(d.bill_id && !d.id ? { bill_id: d.bill_id } : link ? { bill_id: link.id } : {}),
+      ...(d.other_share != null && !d.id ? { other_share: d.other_share } : link && link.other_share != null ? { other_share: link.other_share } : {}),
     };
     const q = d.id ? supabase().from("expenses").update(row).eq("id", d.id) : supabase().from("expenses").insert(row);
     const { error } = await q;
@@ -91,6 +108,14 @@ export function ExpenseForm({ initial, submitLabel, onSaved, extra }: {
         // หมวดส่วนตัว → จ่ายส่วนตัว (ถ้ายังไม่ได้เลือกเอง)
         paid_from: x.id || paidTouched ? x.paid_from : c.scope === "personal" ? "personal" : x.paid_from === "personal" ? "pot" : x.paid_from,
       }))} />
+      {match && (link ? (
+        <div className="flex items-center gap-2 rounded-2xl bg-mint/40 px-3 py-2 text-sm">
+          <span className="flex-1">✓ นับเป็น <b>{match.name}</b> ของเดือน {TH_MONTHS[(mm || 1) - 1]} <span className="text-xs text-muted">(ไม่นับซ้ำกับค่าใช้จ่ายประจำ)</span></span>
+          <button type="button" onClick={() => setLinkOff(true)} aria-label="ไม่นับเป็นค่าใช้จ่ายประจำ" className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted">✕</button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setLinkOff(false)} className="min-h-11 self-start text-sm text-muted underline">นับเป็น {match.name} ของเดือนนี้ไหม?</button>
+      ))}
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายจาก</legend>
         <div className="flex flex-wrap gap-1.5">

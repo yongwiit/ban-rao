@@ -9,7 +9,7 @@ import { useCollapsed } from "./Reorder";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
-import { cardBillsInMonth, cardSummary, incomeInMonth, type IncomeRow } from "@/lib/cards";
+import { cardBillsInMonth, cardSummary, incomeInMonth, isOneTime, oneTimeRange, type IncomeRow } from "@/lib/cards";
 import { fundPerMonth, isDueMonth, isFund, isLoan } from "@/lib/fund";
 import { useCategories } from "./Categories";
 import type { IconKey } from "@/lib/categoryIcons";
@@ -63,6 +63,9 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
   const myIncome = (i: IncomeRow) => i.created_by === userId || i.who === role;
   const inc = incomes.rows.filter((i) => incomeInMonth(i, ym.y, ym.m) && (scope === "home" ? !i.private : myIncome(i)));
   const income = inc.reduce((s, i) => s + Number(i.amount), 0);
+  // ภาระผ่อนเทียบรายได้ประจำเท่านั้น (โบนัส/งานนอกไม่ได้มาทุกเดือน)
+  const regular = inc.filter((i) => !isOneTime(i)).reduce((s, i) => s + Number(i.amount), 0);
+  const extra = income - regular;
   const useBudget = scope === "home" && household.budget_enabled && household.monthly_budget > 0;
   const base = useBudget ? Number(household.monthly_budget) : income;
 
@@ -137,7 +140,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
     + shareBills.filter(isLoan).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0)
     + sums.reduce((t, s) => t + s.monthlyInstallments, 0);
   // คิดจากยอดผ่อนปัจจุบัน จึงแสดงเฉพาะเดือนนี้
-  const dsr = isThisMonth && !useBudget && income > 0 ? Math.round((loans / income) * 100) : 0;
+  const dsr = isThisMonth && !useBudget && regular > 0 ? Math.round((loans / regular) * 100) : 0;
   const dsrTone = dsr <= 40 ? ["ดี", "bg-mint text-[#3F8A5F]"] : dsr <= 50 ? ["เกินเกณฑ์", "bg-butter"] : ["หนักไป", "bg-rose/15 text-rose"];
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
   const seg = (v: number) => `${Math.min(100, base > 0 ? (v / base) * 100 : 0)}%`;
@@ -183,6 +186,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
             <button onClick={useBudget ? onBudget : () => setOpen(true)} className="flex justify-between text-left">
               <span>{useBudget ? "งบเดือนนี้" : scope === "home" ? "รายได้บ้าน" : "รายได้ของฉัน"} <span className="text-xs text-muted underline">{useBudget ? "ปรับงบ" : "แก้"}</span></span><span>{baht(base)}</span>
             </button>
+            {!useBudget && extra > 0 && <span className="-mt-0.5 pl-4 text-xs text-muted">รวม 🎁 รายได้ครั้งเดียว {baht(extra)} ({inc.filter(isOneTime).map((i) => i.label).join(", ")})</span>}
             <span className="flex justify-between"><span className="flex flex-col"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว</span>{(cardPaid > 0 || sharePaid > 0) && <span className="pl-4 text-xs text-muted">รวม{[cardPaid > 0 ? `บิลบัตร ${baht(cardPaid)}` : "", sharePaid > 0 ? `ส่วนของฉันในบ้าน ${baht(sharePaid)}` : ""].filter(Boolean).join(" · ")}</span>}</span><span className="shrink-0">− {baht(used)} · {pct(used, base)}%</span></span>
             {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ยังต้องจ่าย</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
             {fund > 0 && <span className="flex justify-between"><span className="flex flex-col"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#E8C77A]" />🐷 กันไว้ค่าใช้จ่ายรายปี</span><span className="pl-4 text-xs text-muted">ทยอยเก็บทุกเดือน ถึงเดือนจ่ายจะไม่สะดุด</span></span><span className="shrink-0">− {baht(fund)}</span></span>}
@@ -197,7 +201,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
           {(nextCard > 0 || dsr > 0) && (
             <div className="flex flex-col gap-1 rounded-2xl bg-white/60 p-2.5 text-xs">
               {nextCard > 0 && <span>💳 รูดบัตรรอบนี้แล้ว <b>{baht(nextCard)}</b> (จ่าย{nextDue ? ` ${short(nextDue)}` : "เดือนหน้า"}) · ถ้ากันไว้ด้วย เหลือ <b className={left - nextCard < 0 ? "text-rose" : ""}>{baht(left - nextCard)}</b></span>}
-              {dsr > 0 && <span>🧾 ภาระผ่อนต่อเดือน <b>{baht(loans)}</b> = {dsr}% ของรายได้ <span className={`ml-0.5 whitespace-nowrap rounded-md px-1.5 font-semibold ${dsrTone[1]}`}>{dsrTone[0]}</span> <span className="whitespace-nowrap text-muted">· ไม่ควรเกิน 40%</span></span>}
+              {dsr > 0 && <span>🧾 ภาระผ่อนต่อเดือน <b>{baht(loans)}</b> = {dsr}% ของรายได้{extra > 0 ? "ประจำ" : ""} <span className={`ml-0.5 whitespace-nowrap rounded-md px-1.5 font-semibold ${dsrTone[1]}`}>{dsrTone[0]}</span> <span className="whitespace-nowrap text-muted">· ไม่ควรเกิน 40%</span></span>}
             </div>
           )}
         </>
@@ -234,7 +238,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
       {scope === "mine" && <span className="text-xs text-muted">นับเฉพาะของคุณ: รายการ &quot;จ่ายส่วนตัว&quot;/&quot;เห็นคนเดียว&quot; บิลบัตรของคุณ ค่าใช้จ่ายประจำส่วนตัว และส่วนของคุณในรายจ่ายบ้านที่พ่อ/แม่ออกก่อน</span>}
       <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded className="-mb-1 min-h-8 self-end text-xs text-muted">ซ่อนกล่องนี้ ▴</button>
       </>}
-      <Sheet open={open} onClose={() => setOpen(false)} title="รายได้ต่อเดือน">
+      <Sheet open={open} onClose={() => setOpen(false)} title="รายได้">
         {open && <IncomeEditor rows={incomes.rows} people={people.list.filter((p) => !p.kid)} onChange={incomes.refresh} />}
       </Sheet>
     </section>
@@ -242,6 +246,9 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
 }
 
 const LABELS = ["เงินเดือน", "โบนัส (เฉลี่ยต่อเดือน)", "รายได้เสริม", "ค่าเช่า", "ปันผล"];
+const ONCE_LABELS = ["โบนัส", "งานนอก", "ค่าคอม/OT", "ขายของ", "อั่งเปา/ของขวัญ"];
+const TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const monLabel = (ymd: string) => `${TH_MON[Number(ymd.slice(5, 7)) - 1]} ${String((Number(ymd.slice(0, 4)) + 543) % 100).padStart(2, "0")}`;
 
 function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: { key: string; name: string }[]; onChange: () => void }) {
   const { role } = useHousehold();
@@ -249,6 +256,7 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
   const [label, setLabel] = useState("เงินเดือน");
   const [amount, setAmount] = useState("");
   const [priv, setPriv] = useState(false);
+  const [once, setOnce] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const { people: all } = useHousehold();
   // แก้ยอด = ใช้ตั้งแต่เดือนนี้ · เดือนก่อนๆ ยังคิดด้วยยอดเดิม
@@ -256,14 +264,26 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
   const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const monthStart = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
   const prevEnd = ymd(new Date(now.getFullYear(), now.getMonth(), 0));
-  const current = rows.filter((r) => incomeInMonth(r, now.getFullYear(), now.getMonth()));
-  const history = rows.filter((r) => r.valid_to && r.valid_to < monthStart).sort((a, b) => (b.valid_to ?? "").localeCompare(a.valid_to ?? ""));
+  const current = rows.filter((r) => !isOneTime(r) && incomeInMonth(r, now.getFullYear(), now.getMonth()));
+  const history = rows.filter((r) => !isOneTime(r) && r.valid_to && r.valid_to < monthStart).sort((a, b) => (b.valid_to ?? "").localeCompare(a.valid_to ?? ""));
+  // รายได้ครั้งเดียว: เดือนนี้และเดือนหน้าๆ ก่อน แล้วตามด้วยที่ผ่านมาไม่นาน
+  const onceRows = rows.filter(isOneTime).sort((a, b) => (b.valid_from ?? "").localeCompare(a.valid_from ?? ""));
   const started = (r: IncomeRow) => (r.valid_from ?? "2000-01-01") < monthStart;
+  const [onceMonth, setOnceMonth] = useState(monthStart.slice(0, 7));
+  const nextMonth = ymd(new Date(now.getFullYear(), now.getMonth() + 1, 1)).slice(0, 7);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const n = Number(amount.replace(/,/g, ""));
-    if (!(n > 0)) return setMsg("ใส่ยอดต่อเดือนก่อนนะ");
+    if (!(n > 0)) return setMsg(once ? "ใส่ยอดที่ได้ก่อนนะ" : "ใส่ยอดต่อเดือนก่อนนะ");
+    if (once) {
+      const [y, m] = onceMonth.split("-").map(Number);
+      if (!y || !m) return setMsg("เลือกเดือนที่ได้เงินก่อนนะ");
+      const { error } = await supabase().from("incomes").insert({ who, label: label.trim() || "รายได้พิเศษ", amount: n, private: priv, ...oneTimeRange(y, m - 1) });
+      if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
+      setAmount(""); setPriv(false); onChange();
+      return setMsg(`เพิ่มแล้ว ✓ 🎁 ${all.get(who).name} ${label} ${baht(n)} บาท นับเฉพาะเดือน ${monLabel(onceMonth + "-01")}`);
+    }
     const { error } = await supabase().from("incomes").insert({ who, label: label.trim() || "เงินเดือน", amount: n, private: priv, valid_from: monthStart });
     if (error) return setMsg("บันทึกไม่ได้ ลองใหม่อีกครั้ง");
     setAmount(""); setPriv(false); onChange();
@@ -272,7 +292,8 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
   async function update(r: IncomeRow, v: string) {
     const n = Number(v.replace(/,/g, ""));
     if (!(n > 0) || n === Number(r.amount)) return;
-    if (started(r)) {
+    if (isOneTime(r)) await supabase().from("incomes").update({ amount: n }).eq("id", r.id);
+    else if (started(r)) {
       // ปิดยอดเดิมไว้ที่สิ้นเดือนก่อน แล้วเริ่มยอดใหม่เดือนนี้
       await supabase().from("incomes").update({ valid_to: prevEnd }).eq("id", r.id);
       await supabase().from("incomes").insert({ who: r.who, label: r.label, amount: n, private: r.private, valid_from: monthStart });
@@ -286,7 +307,7 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
   }
   async function remove(r: IncomeRow) {
     // เคยใช้ในเดือนก่อน → หยุดตั้งแต่เดือนนี้ (เดือนเก่าไม่เปลี่ยน)
-    if (started(r)) await supabase().from("incomes").update({ valid_to: prevEnd }).eq("id", r.id);
+    if (!isOneTime(r) && started(r)) await supabase().from("incomes").update({ valid_to: prevEnd }).eq("id", r.id);
     else await supabase().from("incomes").delete().eq("id", r.id);
     onChange();
   }
@@ -318,11 +339,36 @@ function IncomeEditor({ rows, people, onChange }: { rows: IncomeRow[]; people: {
           ))}
         </div>
       )}
+      {onceRows.length > 0 && (
+        <div className="flex flex-col gap-1.5 rounded-2xl bg-butter/60 p-3 text-sm">
+          <span className="font-semibold">🎁 รายได้ครั้งเดียว <span className="text-xs font-normal text-muted">(นับเฉพาะเดือนนั้น)</span></span>
+          {onceRows.slice(0, 8).map((r) => (
+            <div key={r.id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{all.get(r.who).name} · {r.label} · <b>เฉพาะ {monLabel(r.valid_from!)}</b>{r.private ? " 🔒" : ""}</span>
+              <span className="w-28 shrink-0"><input className="field min-h-10 text-right" inputMode="decimal" aria-label={`ยอด${r.label}`} defaultValue={String(Number(r.amount))} onBlur={(e) => update(r, e.target.value)} /></span>
+              <button aria-label="ลบ" onClick={() => remove(r)} className="min-h-10 px-2 text-muted">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
       <form onSubmit={add} className="flex flex-col gap-3 rounded-2xl border border-line bg-white p-3">
         <span className="text-sm font-semibold">เพิ่มรายได้</span>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button type="button" className="chip justify-center" aria-pressed={!once} onClick={() => { setOnce(false); setLabel("เงินเดือน"); }}>🔁 ได้ทุกเดือน</button>
+          <button type="button" className="chip justify-center" aria-pressed={once} onClick={() => { setOnce(true); setLabel("โบนัส"); }}>🎁 ครั้งเดียว</button>
+        </div>
         <div className="flex flex-wrap gap-1.5">{people.map((p) => <button type="button" key={p.key} className="chip" aria-pressed={who === p.key} onClick={() => setWho(p.key)}>{p.name}</button>)}</div>
-        <div className="flex flex-wrap gap-1.5">{LABELS.map((l) => <button type="button" key={l} className="chip" aria-pressed={label === l} onClick={() => setLabel(l)}>{l}</button>)}</div>
-        <label className="flex flex-col gap-1 text-sm font-medium">ต่อเดือน (บาท)<input className="field" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="เช่น 35000" /></label>
+        <div className="flex flex-wrap gap-1.5">{(once ? ONCE_LABELS : LABELS).map((l) => <button type="button" key={l} className="chip" aria-pressed={label === l} onClick={() => setLabel(l)}>{l}</button>)}</div>
+        {once && (
+          <div className="flex flex-col gap-1.5 text-sm font-medium">ได้เงินเดือนไหน
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" className="chip" aria-pressed={onceMonth === monthStart.slice(0, 7)} onClick={() => setOnceMonth(monthStart.slice(0, 7))}>เดือนนี้</button>
+              <button type="button" className="chip" aria-pressed={onceMonth === nextMonth} onClick={() => setOnceMonth(nextMonth)}>เดือนหน้า</button>
+              <input type="month" aria-label="เลือกเดือนอื่น" className="field min-h-10 w-auto flex-1" value={onceMonth} onChange={(e) => setOnceMonth(e.target.value)} />
+            </div>
+          </div>
+        )}
+        <label className="flex flex-col gap-1 text-sm font-medium">{once ? "ยอดที่ได้ (บาท)" : "ต่อเดือน (บาท)"}<input className="field" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))} placeholder={once ? "เช่น 20000" : "เช่น 35000"} /></label>
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input type="checkbox" className="size-5 accent-cocoa" checked={priv} onChange={(e) => setPriv(e.target.checked)} />
           <LockIcon />เห็นคนเดียว (ไม่รวมในยอดบ้าน ดูได้ที่ &quot;ของฉัน&quot;)

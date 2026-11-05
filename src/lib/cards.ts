@@ -24,6 +24,15 @@ export function incomeInMonth(i: Pick<IncomeRow, "valid_from" | "valid_to">, y: 
   return (i.valid_from ?? "2000-01-01") <= last && (!i.valid_to || i.valid_to >= first);
 }
 
+/** รายได้ครั้งเดียว (โบนัส งานนอก) = เริ่มวันที่ 1 และจบสิ้นเดือนเดียวกัน */
+export function isOneTime(i: Pick<IncomeRow, "valid_from" | "valid_to">): boolean {
+  return !!i.valid_from && !!i.valid_to && i.valid_from.endsWith("-01") && i.valid_from.slice(0, 7) === i.valid_to.slice(0, 7);
+}
+/** ช่วงวันของรายได้ครั้งเดียวในเดือน y/m (0–11) */
+export function oneTimeRange(y: number, m: number): { valid_from: string; valid_to: string } {
+  return { valid_from: ymdOf(new Date(y, m, 1)), valid_to: ymdOf(new Date(y, m + 1, 0)) };
+}
+
 /** เดือนเป็นเลขลำดับ (ปี*12 + เดือน 0-11) เพื่อเทียบรอบง่ายๆ */
 type Mi = number;
 const mi = (y: number, m: number): Mi => y * 12 + m;
