@@ -144,7 +144,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
       {header}
       {collapsed.has("month") ? (
         <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded={false} className="flex items-center gap-2 text-left">
-          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
           <span className={`font-display text-xl font-bold ${base > 0 && left < 0 ? "text-rose" : ""}`}>{baht(base === 0 ? used : Math.abs(left))} บาท</span>
           {reserve > 0 && <span className="text-xs font-semibold text-rose">ค้าง {baht(reserve)}</span>}
           <span className="text-muted" aria-hidden>▾</span>

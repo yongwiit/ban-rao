@@ -122,9 +122,11 @@ export default function MoneyPage() {
     ? month.rows.reduce((s, e) => s + Number(e.amount) * mineWeight(e), 0) + cardRows.filter((r) => dayKey(r.spent_at).slice(0, 7) === ymKey).reduce((s, r) => s + r.amount, 0)
     : total;
   const myCards = cards.cards.filter((c) => c.owner === role || c.created_by === userId);
-  const cardDue = cardBillsInMonth(myCards, cards.charges, ym.y, ym.m).filter((b) => !ticks.rows.some((t) => t.card_id === b.card.id && t.ym === ymKey)).reduce((s, b) => s + b.amount, 0);
+  // เดือนที่ผ่านไปแล้ว ถือว่าจ่ายครบ (ตรงกับการ์ดบนสุด) ไม่ขึ้นว่าค้าง
+  const isPast = ym.y * 12 + ym.m < now.getFullYear() * 12 + now.getMonth();
+  const cardDue = isPast ? 0 : cardBillsInMonth(myCards, cards.charges, ym.y, ym.m).filter((b) => !ticks.rows.some((t) => t.card_id === b.card.id && t.ym === ymKey)).reduce((s, b) => s + b.amount, 0);
   const recorded = (id: string) => month.rows.some((e) => e.bill_id === id);
-  const fixedDue = activeBills.filter((b) => b.period === "monthly" && !recorded(b.id)).reduce((s, b) => s + Number(b.amount), 0)
+  const fixedDue = isPast ? 0 : activeBills.filter((b) => b.period === "monthly" && !recorded(b.id)).reduce((s, b) => s + Number(b.amount), 0)
     + shareBills.filter((b) => !recorded(b.id)).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0);
 
   const sections: Record<string, { label: string; node: React.ReactNode; summary?: string; tone?: "ok" | "due" } | null> = {
