@@ -32,14 +32,22 @@ export function fixedMonthly(bills: BillRow[], subs: ChargeRow[] = []) {
  * ค่าใช้จ่ายประจำ: แท็บบ้าน = ของบ้าน · แท็บของฉัน = ส่วนตัว + subscription ในบัตรของฉัน
  * หักบัญชีอัตโนมัติ → ระบบจดให้ทุกเดือน · ยอดไม่คงที่ → กด "จดยอดเดือนนี้"
  */
-export function FixedCosts({ scope, bills, shareBills = [], subs, monthRows, isThisMonth, onRecord }: {
-  scope: "home" | "mine"; bills: BillRow[]; shareBills?: BillRow[]; subs: ChargeRow[]; monthRows: ExpenseRow[]; isThisMonth: boolean;
+export function FixedCosts({ scope, bills, shareBills = [], subs, cardName = {}, monthRows, isThisMonth, onRecord }: {
+  scope: "home" | "mine"; bills: BillRow[]; shareBills?: BillRow[]; subs: ChargeRow[]; cardName?: Record<string, string>; monthRows: ExpenseRow[]; isThisMonth: boolean;
   onRecord: (d: ExpenseDraft) => void;
 }) {
   const cats = useCategories();
   const { people, household, role } = useHousehold();
   const [open, setOpen] = useState<BillRow | "new" | null>(null);
   const total = fixedMonthly(bills, subs) + shareBills.reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0);
+  // สรุปเดือนนี้: จดแล้ว / ยังไม่จด (เฉพาะรายเดือน) / subscription ที่ตัดผ่านบัตร
+  const recOf = (id: string) => monthRows.find((e) => e.bill_id === id);
+  const monthlyBills = bills.filter((b) => b.period === "monthly");
+  const recTotal = monthlyBills.reduce((s, b) => s + Number(recOf(b.id)?.amount ?? 0), 0)
+    + shareBills.reduce((s, b) => { const r = recOf(b.id); return s + (r ? Number(r.amount) * myShare(r, role) : 0); }, 0);
+  const dueLeft = monthlyBills.filter((b) => !recOf(b.id)).reduce((s, b) => s + Number(b.amount), 0)
+    + shareBills.filter((b) => !recOf(b.id)).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0);
+  const subTotal = fixedMonthly([], subs);
   const now = new Date();
   // ยอดจริงเดือนก่อน ไว้เทียบ (เช่น ค่าน้ำ ค่าไฟ ที่ยอดไม่คงที่)
   const prevRange = monthRange(now.getFullYear(), now.getMonth() - 1);
@@ -97,11 +105,16 @@ export function FixedCosts({ scope, bills, shareBills = [], subs, monthRows, isT
           <span className="text-xs font-semibold text-muted">subscription ในบัตรของฉัน (แก้ได้ที่หน้าบัตร)</span>
           {subs.map((c) => {
             const cat = cats.get(c.category);
+            const d = Number(c.charged_on.slice(8));
+            const cut = isThisMonth && c.repeat !== "yearly" && now.getDate() >= d;
             return (
               <span key={c.id} className="flex items-center gap-2.5 text-sm">
                 <CatIcon icon={cat.icon} size={30} />
-                <span className="min-w-0 flex-1 truncate">{c.title} <span className="text-xs text-muted">· {c.repeat === "yearly" ? "ทุกปี" : "ทุกเดือน"} วันที่ {Number(c.charged_on.slice(8))}{c.bill_to ? " · เรียกเก็บ" : ""}</span></span>
-                <span>{baht(Number(c.amount))}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{c.title}</span>
+                  <span className="truncate text-xs text-muted">{c.repeat === "yearly" ? "ทุกปี" : "ทุกเดือน"} วันที่ {d}{cardName[c.card_id] ? ` · ${cardName[c.card_id].startsWith("บัตร") ? "" : "บัตร "}${cardName[c.card_id]}` : ""}{cut ? " · ตัดบัตรแล้ว" : ""}{c.bill_to ? " · เรียกเก็บ" : ""}</span>
+                </span>
+                <span className="shrink-0">{baht(Number(c.amount))}</span>
               </span>
             );
           })}
@@ -120,17 +133,24 @@ export function FixedCosts({ scope, bills, shareBills = [], subs, monthRows, isT
                 <CatIcon icon={cat.icon} size={30} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{b.name} <span className="text-xs text-muted">· ส่วนของฉัน {Math.round(sh * 100)}%</span></span>
-                  <span className="text-xs text-muted">{payer}{isThisMonth && rec ? " · ✓ จดเดือนนี้แล้ว" : ""}</span>
+                  <span className="text-xs text-muted">{payer}</span>
                 </span>
-                <span>{baht(Number(b.amount) * sh)}</span>
+                {isThisMonth && rec
+                  ? <span className="shrink-0 rounded-lg bg-mint px-2 py-1 text-xs">✓ {baht(Number(rec.amount) * myShare(rec, role))}</span>
+                  : <span className="shrink-0">{baht(Number(b.amount) * sh)}</span>}
               </span>
             );
           })}
         </div>
       )}
       {total > 0 && (
-        <div className="flex items-center justify-between border-t border-dashed border-line pt-2 font-semibold">
-          <span>ต้องเตรียมเดือนละ</span><span className="font-display text-lg">{baht(total)} บาท</span>
+        <div className="flex flex-col gap-0.5 border-t border-dashed border-line pt-2">
+          <span className="flex items-center justify-between font-semibold"><span>รวมต่อเดือน</span><span className="font-display text-lg">{baht(total)} บาท</span></span>
+          {isThisMonth && (
+            <span className="text-xs text-muted">
+              จดแล้ว {baht(recTotal)}{dueLeft > 0 ? ` · ยังไม่จด ${baht(dueLeft)}` : " · ครบแล้ว ✓"}{subTotal > 0 ? ` · subscription ${baht(subTotal)} ตัดผ่านบัตร (นับในบิลบัตร)` : ""}
+            </span>
+          )}
         </div>
       )}
       <Sheet open={!!open} onClose={() => setOpen(null)} title={open === "new" ? "เพิ่มค่าใช้จ่ายประจำ" : "แก้ค่าใช้จ่ายประจำ"}>

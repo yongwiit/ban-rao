@@ -147,7 +147,7 @@ export default function MoneyPage() {
     ) },
     cards: scope !== "mine" ? null : { label: "💳 บัตรเครดิตของฉัน", ...owed(cardDue), node: <CreditCards /> },
     goals: scope !== "home" ? null : { label: "🎯 เป้าหมายออมเงิน", node: <Goals /> },
-    fixed: { label: "📌 ค่าใช้จ่ายประจำ", ...owed(fixedDue), node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
+    fixed: { label: scope === "home" ? "📌 ค่าใช้จ่ายประจำของบ้าน" : "📌 ค่าใช้จ่ายประจำของฉัน", ...owed(fixedDue), node: <FixedCosts scope={scope} bills={activeBills} shareBills={shareBills} subs={mySubs} cardName={Object.fromEntries(cards.cards.map((c) => [c.id, c.name]))} monthRows={month.rows} isThisMonth={isThisMonth} onRecord={setEditing} /> },
     list: { label: "🧾 รายการเดือนนี้", summary: `${list.length} รายการ · ${baht(total)} บาท`, node: (
       <section className="card flex flex-col gap-2.5">
         <div className="flex items-baseline justify-between">
