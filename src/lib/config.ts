@@ -8,3 +8,5 @@ export const LINE_OA_ID = process.env.NEXT_PUBLIC_LINE_OA_ID || "";
 /** กุญแจสาธารณะสำหรับ Web Push (คู่กับกุญแจลับที่เก็บใน Supabase) */
 export const VAPID_PUBLIC_KEY = "BJjE-hd62z5BtXtRCcuGHAS5PpZPj1AMs0jBNGJ7mbd9IcBg4iCxKOpLDXIZ-MtjHh6yoGJpCfzQ2REJOifHAaY";
 export const GOOGLE_LOGIN = false; // เปิดเมื่อตั้งค่า Google ใน Supabase เสร็จ
+/** เลือกเดือนที่จ่ายของค่าใช้จ่ายรายปี (ต้องมี migration 0033 บนฐานข้อมูลก่อน) */
+export const FUND_MONTH = false;

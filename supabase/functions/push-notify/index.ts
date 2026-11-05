@@ -201,9 +201,12 @@ async function onExpense(id: string) {
     const start = thMonthStart(new Date());
     const end = new Date(start.getTime() + 40 * 864e5);
     const nextStart = thMonthStart(end);
-    const { data: rows } = await db.from("expenses").select("amount, private, paid_from").eq("household_id", e.household_id)
+    const { data: rows } = await db.from("expenses").select("amount, private, paid_from, category, bill_id").eq("household_id", e.household_id)
       .gte("spent_at", start.toISOString()).lt("spent_at", nextStart.toISOString());
-    const total = (rows ?? []).filter((x) => !x.private && x.paid_from !== "personal").reduce((s, x) => s + Number(x.amount), 0);
+    // ไม่นับเงินออม/ลงทุน และค่าใช้จ่ายรายปีที่จ่ายจากเงินที่กันไว้ (ตรงกับการ์ดในแอป)
+    const { data: fb } = await db.from("bills").select("id").eq("household_id", e.household_id).in("period", ["yearly", "term"]);
+    const fundIds = new Set((fb ?? []).map((x) => x.id));
+    const total = (rows ?? []).filter((x) => !x.private && x.paid_from !== "personal" && !["save", "invest"].includes(x.category) && !(x.bill_id && fundIds.has(x.bill_id))).reduce((s, x) => s + Number(x.amount), 0);
     const ym = thDay(start).slice(0, 7);
     const pct = (total / budget) * 100;
     const level = pct >= 100 ? 100 : pct >= 80 ? 80 : 0;

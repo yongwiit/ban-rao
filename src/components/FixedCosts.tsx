@@ -13,6 +13,10 @@ import type { ChargeRow } from "@/lib/cards";
 import type { BillRow, ExpenseRow } from "@/lib/types";
 import type { ExpenseDraft } from "./ExpenseForm";
 import { myShare, otherShare } from "@/lib/settle";
+import { FUND_MONTH } from "@/lib/config";
+import { fundDueMonths, fundPerMonth, fundSaved, isFund } from "@/lib/fund";
+
+const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
 const otherOf = (p: PaidFrom) => (p === "dad" ? "mom" : "dad");
 /** " · แม่ช่วย 50%" สำหรับค่าใช้จ่ายบ้านที่พ่อ/แม่ออกก่อน */
@@ -84,6 +88,7 @@ export function FixedCosts({ scope, bills, shareBills = [], subs, cardName = {},
                 <span className="text-xs text-muted">
                   {b.variable ? "ยอดไม่คงที่ ~" : ""}{baht(Number(b.amount))}/{BILL_PERIODS[b.period].unit}{b.due_day ? ` · วันที่ ${b.due_day}` : ""}
                   {b.auto_record ? " · จดให้อัตโนมัติ" : ""}{scope === "home" && b.paid_from !== "pot" ? ` · ${paidFromLabel(b.paid_from, people)}` : ""}{shareText(b, people)}
+                  {isFund(b) && (b.due_month ? ` · จ่าย${fundDueMonths(b).map((m) => ` ${TH_MONTHS[m]}`).join(",")}` : " · ยังไม่ได้ตั้งเดือนที่จ่าย")}
                   {last > 0 ? (diff ? ` · ${diff > 0 ? "▲ แพงขึ้น" : "▼ ถูกลง"} ${baht(Math.abs(diff))} จากเดือนก่อน` : ` · เดือนก่อน ${baht(last)}`) : ""}
                 </span>
               </span>
@@ -96,7 +101,18 @@ export function FixedCosts({ scope, bills, shareBills = [], subs, cardName = {},
                     onClick={() => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(now), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id, other_share: b.other_share ?? null })}>
                     จดยอดเดือนนี้
                   </button>)}
-            {!(b.period === "monthly" && isThisMonth) && <span className="shrink-0">{baht(monthlySetAside(Number(b.amount), b.period))}</span>}
+            {isFund(b) ? (() => {
+              const got = fundSaved(b, now.getMonth());
+              const pctGot = got == null ? 0 : Math.min(100, (got / Number(b.amount)) * 100);
+              return (
+                <span className="flex w-24 shrink-0 flex-col items-end gap-0.5">
+                  <span className="text-xs text-muted">🐷 กันเดือนละ</span>
+                  <span className="font-semibold">{baht(fundPerMonth(b))}</span>
+                  {got != null && <span className="h-1.5 w-full overflow-hidden rounded-full bg-sand" title={`กันแล้ว ~${baht(got)}`}><span className="block h-1.5 rounded-full bg-[#E8C77A]" style={{ width: `${pctGot}%` }} /></span>}
+                  {got != null && <span className="text-[11px] text-muted">กันแล้ว ~{baht(got)}</span>}
+                </span>
+              );
+            })() : !(b.period === "monthly" && isThisMonth) && <span className="shrink-0">{baht(monthlySetAside(Number(b.amount), b.period))}</span>}
           </div>
         );
       })}
@@ -171,6 +187,7 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
   const [amount, setAmount] = useState(bill ? String(Number(bill.amount)) : "");
   const [period, setPeriod] = useState<BillPeriod>(bill?.period ?? "monthly");
   const [due, setDue] = useState(bill?.due_day ? String(bill.due_day) : "");
+  const [dueMonth, setDueMonth] = useState<number | null>(bill?.due_month ?? null);
   const [cat, setCat] = useState(bill?.category ?? (scope === "home" ? "bill" : "car"));
   const [paidFrom, setPaidFrom] = useState<PaidFrom>(bill?.paid_from ?? (scope === "home" ? "pot" : "personal"));
   const [share, setShare] = useState<number>(bill?.other_share == null ? 0.5 : Number(bill.other_share));
@@ -195,7 +212,8 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
     if (method === "auto" && monthly && !(d >= 1 && d <= 31)) return setErr("ใส่วันที่จ่ายทุกเดือน (1–31) แอปจะจดรายจ่ายให้วันนั้น");
     const auto = method === "auto" && monthly;
     const row = {
-      name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? d : null, category: cat, paid_from: paidFrom,
+      name: name.trim(), amount: n, period, due_day: due && period !== "daily" ? d : null,
+      ...(!FUND_MONTH ? {} : period === "yearly" || period === "term" ? { due_month: dueMonth } : bill?.due_month ? { due_month: null } : {}), category: cat, paid_from: paidFrom,
       auto_record: auto, variable: method === "variable",
       other_share: paidFrom === "dad" || paidFrom === "mom" ? share : null,
       // เริ่มจดอัตโนมัติจากวันนี้ (ไม่ย้อนจดเดือนที่ผ่านมา)
@@ -219,6 +237,15 @@ function BillForm({ bill, scope, onDone }: { bill: BillRow | null; scope: "home"
           {(Object.keys(BILL_PERIODS) as BillPeriod[]).map((p) => <button type="button" key={p} className="chip" aria-pressed={period === p} onClick={() => setPeriod(p)}>{BILL_PERIODS[p].label}</button>)}
         </div>
       </fieldset>
+      {FUND_MONTH && (period === "yearly" || period === "term") && (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium">{period === "term" ? "จ่ายเทอมแรกเดือนไหน (อีกเทอมห่าง 6 เดือน)" : "จ่ายเดือนไหน"}</legend>
+          <div className="grid grid-cols-6 gap-1.5">
+            {TH_MONTHS.map((m, i) => <button type="button" key={m} className="chip justify-center px-0" aria-pressed={dueMonth === i + 1} onClick={() => setDueMonth(dueMonth === i + 1 ? null : i + 1)}>{m}</button>)}
+          </div>
+          <span className="mt-1 block text-xs text-muted">🐷 แอปจะกันเงินไว้ให้ทุกเดือน ถึงเดือนจ่ายจะได้ไม่สะดุด</span>
+        </fieldset>
+      )}
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium">จ่ายยังไง</legend>
         <div className="flex flex-col gap-1.5">

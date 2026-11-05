@@ -10,6 +10,7 @@ import { FixedCosts } from "@/components/FixedCosts";
 import { Reorderable, useCollapsed, useSectionOrder } from "@/components/Reorder";
 import { activeSub, cardBillsInMonth } from "@/lib/cards";
 import { MonthCard } from "@/components/Income";
+import { isFund, isSaving } from "@/lib/fund";
 import { MonthList, buildMonthItems, cardItemsInMonth } from "@/components/MonthList";
 import { confetti } from "@/lib/confetti";
 import { play } from "@/lib/sfx";
@@ -56,7 +57,14 @@ export default function MoneyPage() {
   const bills = useLive<BillRow>("bills", hid, () => supabase().from("bills").select("*").order("created_at"));
 
   const shared = month.rows.filter(inScope);
-  const total = shared.reduce((s, e) => s + Number(e.amount), 0);
+  // รายจ่ายจริง = ไม่รวมเงินออม/ลงทุน และไม่รวมค่าใช้จ่ายรายปีที่จ่ายจากเงินที่กันไว้ทุกเดือน
+  const fundIds = new Set(bills.rows.filter(isFund).map((b) => b.id));
+  const counted = (e: Pick<ExpenseRow, "category" | "bill_id">) => !isSaving(e.category) && !(e.bill_id && fundIds.has(e.bill_id));
+  const total = shared.filter(counted).reduce((s, e) => s + Number(e.amount), 0);
+  const deposits = useLive<{ amount: number; who: string }>("savings_deposits", hid, () =>
+    supabase().from("savings_deposits").select("amount, who").gte("created_at", start).lt("created_at", end), [start]);
+  const saved = shared.filter((e) => isSaving(e.category)).reduce((s, e) => s + Number(e.amount), 0)
+    + deposits.rows.filter((d) => scope === "home" || d.who === role).reduce((s, d) => s + Number(d.amount), 0);
   const budget = household.monthly_budget;
   const owe = momOwesDad({
     expenses: allShared.rows.map((e) => ({ ...e, amount: Number(e.amount) })),
@@ -156,7 +164,7 @@ export default function MoneyPage() {
 
       <BillRequests />
 
-      <MonthCard scope={scope} spent={total} bills={activeBills} shareBills={shareBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} onRecord={setEditing} header={
+      <MonthCard scope={scope} spent={total} saved={saved} counted={counted} bills={activeBills} shareBills={shareBills} monthRows={month.rows} ym={ym} onBudget={() => setBudgetOpen(true)} onRecord={setEditing} header={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button aria-label="เดือนก่อน" onClick={() => shift(-1)} className="flex size-9 items-center justify-center rounded-full bg-white/70"><ChevronIcon dir="left" size={16} /></button>

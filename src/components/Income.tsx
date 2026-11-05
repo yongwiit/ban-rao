@@ -9,7 +9,8 @@ import { useCollapsed } from "./Reorder";
 import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
-import { cardBillsInMonth, type IncomeRow } from "@/lib/cards";
+import { cardBillsInMonth, cardSummary, type IncomeRow } from "@/lib/cards";
+import { fundPerMonth, isDueMonth, isFund, isLoan } from "@/lib/fund";
 import { useCategories } from "./Categories";
 import type { IconKey } from "@/lib/categoryIcons";
 import type { BillRow, ExpenseRow } from "@/lib/types";
@@ -19,7 +20,7 @@ import { myShare } from "@/lib/settle";
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 const short = (d: Date) => thaiDate(d, { day: "numeric", month: "short" });
 
-type Item = { key: string; date: Date | null; label: string; amount: number; icon: IconKey; note?: string; paid: boolean; tap?: () => void };
+type Item = { key: string; date: Date | null; label: string; amount: number; icon: IconKey; note?: string; paid: boolean; tap?: () => void; fromFund?: boolean };
 type PaidRow = { card_id: string; ym: string; amount: number | null };
 
 /** ป้ายวันที่อ่านง่าย: วันนี้ / พรุ่งนี้ / อีก N วัน / เลยมา N วัน */
@@ -41,8 +42,8 @@ function dueChip(date: Date | null, paid: boolean, isThisMonth: boolean): { text
  * บิลเดือนนี้ = ค่าใช้จ่ายประจำรายเดือน + บิลบัตร (แท็บของฉัน) ติ๊กได้ว่าจ่ายแล้ว
  * ค่าใช้จ่ายประจำ: ติ๊ก = จดเป็นรายจ่าย · บิลบัตร: ติ๊ก = บันทึกว่าจ่ายรอบนี้แล้ว (card_bill_paid)
  */
-export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym, header, onBudget, onRecord }: {
-  scope: "home" | "mine"; spent: number; bills: BillRow[]; shareBills?: BillRow[]; monthRows: ExpenseRow[]; ym: { y: number; m: number };
+export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills, shareBills = [], monthRows, ym, header, onBudget, onRecord }: {
+  scope: "home" | "mine"; spent: number; saved?: number; counted?: (e: ExpenseRow) => boolean; bills: BillRow[]; shareBills?: BillRow[]; monthRows: ExpenseRow[]; ym: { y: number; m: number };
   header: React.ReactNode; onBudget: () => void; onRecord: (d: ExpenseDraft) => void;
 }) {
   const { household, people, userId, role } = useHousehold();
@@ -80,14 +81,18 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
   if (!isPast) {
     const dim = new Date(ym.y, ym.m + 1, 0).getDate();
     for (const b of bills) {
-      if (b.period !== "monthly") continue;
+      // รายปี/เทอม: แสดงเฉพาะเดือนที่ต้องจ่าย และจ่ายจากเงินที่กันไว้ (ไม่หักซ้ำ)
+      const fund = isFund(b);
+      if (fund && !isDueMonth(b, ym.m)) continue;
       const rec = monthRows.find((e) => e.bill_id === b.id);
       const c = cats.get(b.category ?? "bill");
       const date = b.due_day ? new Date(ym.y, ym.m, Math.min(b.due_day, dim)) : null;
+      // ทุกวัน: รวมทั้งเดือน (วันละ x × จำนวนวัน)
+      const amt = b.period === "daily" ? Number(b.amount) * dim : Number(b.amount);
       items.push({
-        key: `bill-${b.id}`, date, label: b.name, amount: rec ? Number(rec.amount) : Number(b.amount), icon: c.icon, paid: !!rec,
-        note: rec ? undefined : b.variable ? "ยอดประมาณ" : b.auto_record ? (date && b.auto_from && dayKey(date) < b.auto_from ? "เดือนนี้กดจดเอง เดือนหน้าจดให้" : "จดให้อัตโนมัติ") : undefined,
-        tap: rec ? undefined : () => onRecord({ amount: b.variable ? "" : String(Number(b.amount)), date: dayKey(isThisMonth ? now : date ?? new Date(ym.y, ym.m, 1)), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id, other_share: b.other_share ?? null }),
+        key: `bill-${b.id}`, date, label: b.period === "daily" ? `${b.name} (วันละ ${baht(Number(b.amount))})` : b.name, amount: rec ? Number(rec.amount) : amt, icon: c.icon, paid: !!rec, fromFund: fund,
+        note: rec ? undefined : fund ? "🐷 จ่ายจากเงินที่กันไว้" : b.variable ? "ยอดประมาณ" : b.auto_record ? (date && b.auto_from && dayKey(date) < b.auto_from ? "เดือนนี้กดจดเอง เดือนหน้าจดให้" : "จดให้อัตโนมัติ") : undefined,
+        tap: rec ? undefined : () => onRecord({ amount: b.variable ? "" : String(amt), date: dayKey(isThisMonth ? now : date ?? new Date(ym.y, ym.m, 1)), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id, other_share: b.other_share ?? null }),
       });
     }
     // ส่วนของฉันในค่าใช้จ่ายบ้านที่พ่อ/แม่ออกก่อน (เช่น ค่าบ้าน 50%)
@@ -110,12 +115,25 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
   const paidCount = items.filter((i) => i.paid).length;
   // ส่วนของฉันในรายจ่ายบ้านเดือนนี้ที่พ่อ/แม่ออกก่อน (ทุกรายการ ไม่ใช่แค่ค่าใช้จ่ายประจำ)
   // รายการที่มาจากบัตรไม่นับ เพราะนับในบิลบัตรแล้ว
-  const sharePaid = scope === "mine" ? monthRows.filter((e) => !e.private && !e.card_charge_id).reduce((s, e) => s + Number(e.amount) * myShare(e, role), 0) : 0;
+  const sharePaid = scope === "mine" ? monthRows.filter((e) => !e.private && !e.card_charge_id && counted(e)).reduce((s, e) => s + Number(e.amount) * myShare(e, role), 0) : 0;
   // บิลบัตรที่จ่ายแล้วมีส่วนที่เรียกเก็บคนในบ้านไว้ → จะได้คืน
   const refund = cardBills.reduce((s, b) => s + b.refund, 0);
-  const reserve = items.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0);
+  const reserve = items.filter((i) => !i.paid && !i.fromFund).reduce((s, i) => s + i.amount, 0);
   const used = spent + cardPaid + sharePaid;
-  const left = base - used - reserve + refund;
+  // กันเงินไว้ทุกเดือนสำหรับค่าใช้จ่ายรายปี/ต่อเทอม (sinking fund)
+  const fund = bills.filter(isFund).reduce((s, b) => s + fundPerMonth(b), 0);
+  const left = base - used - reserve - fund - saved + refund;
+  // รูดบัตรรอบที่ยังไม่ตัด (จ่ายเดือนหน้า) + ภาระผ่อนต่อเดือน
+  const todayKey = dayKey(now);
+  const sums = myCards.map((c) => cardSummary(c, charges.filter((x) => x.card_id === c.id), todayKey));
+  const later = isThisMonth ? sums.filter((s) => s.cycleAmount > 0 && s.cycleDue.getFullYear() * 12 + s.cycleDue.getMonth() > ym.y * 12 + ym.m) : [];
+  const nextCard = later.reduce((t, s) => t + s.cycleAmount, 0);
+  const nextDue = later.map((s) => s.cycleDue).sort((a, b) => a.getTime() - b.getTime())[0];
+  const loans = bills.filter((b) => b.period === "monthly" && isLoan(b)).reduce((s, b) => s + Number(b.amount), 0)
+    + shareBills.filter(isLoan).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0)
+    + sums.reduce((t, s) => t + s.monthlyInstallments, 0);
+  const dsr = !useBudget && income > 0 ? Math.round((loans / income) * 100) : 0;
+  const dsrTone = dsr <= 40 ? ["ดี", "bg-mint text-[#3F8A5F]"] : dsr <= 50 ? ["พอไหว", "bg-butter"] : ["หนักไป", "bg-rose/15 text-rose"];
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
   const seg = (v: number) => `${Math.min(100, base > 0 ? (v / base) * 100 : 0)}%`;
   const [showAll, setShowAll] = useState(false);
@@ -153,6 +171,8 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
           <span className="flex h-3 overflow-hidden rounded-full bg-white" aria-hidden>
             <span className="block h-3 bg-rose" style={{ width: seg(used) }} />
             <span className="block h-3 bg-[repeating-linear-gradient(45deg,#B49BE0_0_4px,#DCCDF3_4px_8px)]" style={{ width: seg(reserve) }} />
+            <span className="block h-3 bg-[repeating-linear-gradient(45deg,#E8C77A_0_4px,#F6E7BE_4px_8px)]" style={{ width: seg(fund) }} />
+            <span className="block h-3 bg-[#8FCFA8]" style={{ width: seg(saved) }} />
           </span>
           <div className="flex flex-col gap-0.5 text-sm">
             <button onClick={useBudget ? onBudget : () => setOpen(true)} className="flex justify-between text-left">
@@ -160,8 +180,21 @@ export function MonthCard({ scope, spent, bills, shareBills = [], monthRows, ym,
             </button>
             <span className="flex justify-between"><span className="flex flex-col"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-rose" />ใช้ไปแล้ว</span>{(cardPaid > 0 || sharePaid > 0) && <span className="pl-4 text-xs text-muted">รวม{[cardPaid > 0 ? `บิลบัตร ${baht(cardPaid)}` : "", sharePaid > 0 ? `ส่วนของฉันในบ้าน ${baht(sharePaid)}` : ""].filter(Boolean).join(" · ")}</span>}</span><span className="shrink-0">− {baht(used)} · {pct(used, base)}%</span></span>
             {reserve > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#B49BE0]" />ยังต้องจ่าย</span><span>− {baht(reserve)} · {pct(reserve, base)}%</span></span>}
+            {fund > 0 && <span className="flex justify-between"><span className="flex flex-col"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#E8C77A]" />🐷 กันไว้ค่าใช้จ่ายรายปี</span><span className="pl-4 text-xs text-muted">ทยอยเก็บทุกเดือน ถึงเดือนจ่ายจะไม่สะดุด</span></span><span className="shrink-0">− {baht(fund)}</span></span>}
+            {saved > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-[#8FCFA8]" />💚 เก็บออม/ลงทุนแล้ว</span><span className="shrink-0">− {baht(saved)} · {pct(saved, base)}%</span></span>}
             {refund > 0 && <span className="flex justify-between"><span><i className="mr-1.5 inline-block size-2.5 rounded-full bg-mint" />ได้คืน (รูดบัตรแล้วเรียกเก็บคนในบ้าน)</span><span>+ {baht(refund)}</span></span>}
           </div>
+          {(isThisMonth || saved > 0) && !useBudget && income > 0 && (
+            <span className={`self-start rounded-xl px-2.5 py-1 text-xs ${pct(saved, income) >= 10 ? "bg-mint text-[#3F8A5F]" : "bg-white/70"}`}>
+              {saved > 0 ? `${pct(saved, income) >= 20 ? "🌟 เก่งมาก!" : pct(saved, income) >= 10 ? "👍 ดีเลย" : "🌱 เริ่มแล้ว"} ออมไป ${pct(saved, income)}% ของรายได้ · แนะนำ 10–20%` : `🌱 ยังไม่ได้ออมเดือนนี้ · ลองกันไว้ 10% = ${baht(income * 0.1)} บาท (จดหมวด "ออม" หรือฝากเข้าเป้าหมาย)`}
+            </span>
+          )}
+          {(nextCard > 0 || dsr > 0) && (
+            <div className="flex flex-col gap-1 rounded-2xl bg-white/60 p-2.5 text-xs">
+              {nextCard > 0 && <span>💳 รูดบัตรรอบนี้แล้ว <b>{baht(nextCard)}</b> (จ่าย{nextDue ? ` ${short(nextDue)}` : "เดือนหน้า"}) · ถ้ากันไว้ด้วย เหลือ <b className={left - nextCard < 0 ? "text-rose" : ""}>{baht(left - nextCard)}</b></span>}
+              {dsr > 0 && <span>🧾 ภาระผ่อนต่อเดือน <b>{baht(loans)}</b> = {dsr}% ของรายได้ <span className={`ml-0.5 whitespace-nowrap rounded-md px-1.5 font-semibold ${dsrTone[1]}`}>{dsrTone[0]}</span> <span className="whitespace-nowrap text-muted">· ไม่ควรเกิน 40%</span></span>}
+            </div>
+          )}
         </>
       )}
       {items.length > 0 && (

@@ -25,6 +25,8 @@ export type BillRow = {
   variable: boolean;
   /** สัดส่วนที่อีกฝ่ายช่วยจ่าย 0–1 (null = ครึ่ง) เมื่อพ่อหรือแม่ออกก่อน */
   other_share?: number | null;
+  /** เดือนที่จ่าย 1–12 (ปีละครั้ง/เทอมแรก) ไว้กันเงินทุกเดือน */
+  due_month?: number | null;
 };
 export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
 export type MemberRow = { user_id: string; role: Role };
