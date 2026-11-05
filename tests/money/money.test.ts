@@ -171,3 +171,34 @@ test("ภาระผ่อน (DSR) คิดจากรายได้ปร�
   assert.equal(regular, 83000);
   assert.equal(Math.round((9500 / regular) * 100), 11);
 });
+
+// ---- คำเตือนวันที่บัตรเครดิต ----
+import { chargeHint, dueGap, oddDueGap } from "../../src/lib/cards";
+const ymd = (d: Date) => d.toLocaleDateString("en-CA");
+
+test("วันจ่ายห่างจากวันตัด: ตัด 25 จ่าย 10 = 15 วัน ปกติ · ตัด 28 จ่าย 30 = 2 วัน เตือน", () => {
+  assert.equal(dueGap(25, 10), 15);
+  assert.equal(oddDueGap(25, 10), false);
+  assert.equal(oddDueGap(5, 25), false);
+  assert.equal(oddDueGap(28, 30), true);
+  assert.equal(oddDueGap(15, 30), false);
+  assert.equal(oddDueGap(10, 30), false);
+  assert.equal(oddDueGap(18, 30), false);
+  assert.equal(oddDueGap(1, 30), true, "29 วัน");
+});
+
+test("รูดแล้วเข้าบิลไหน: กสิกร (ตัด 25) รูด 23 พ.ย. → บิล 25 พ.ย. จ่าย 10 ธ.ค. · ใกล้วันตัด", () => {
+  const h = chargeHint(cards[0], "2026-11-23", "2026-11-23");
+  assert.equal(ymd(h.statement), "2026-11-25");
+  assert.equal(ymd(h.due), "2026-12-10");
+  assert.equal(h.nearCut, true);
+  assert.equal(chargeHint(cards[0], "2026-11-20", "2026-11-23").nearCut, false, "ก่อนวันตัด 5 วัน");
+  assert.equal(chargeHint(cards[0], "2026-11-26", "2026-11-26").nearCut, false, "หลังวันตัด = รอบใหม่");
+  assert.equal(ymd(chargeHint(cards[0], "2026-11-26", "2026-11-26").statement), "2026-12-25");
+});
+
+test("วันที่ผิดปกติ: อนาคต / ย้อนหลังเกิน 2 เดือน", () => {
+  assert.equal(chargeHint(cards[0], "2026-11-06", "2026-11-05").future, true);
+  assert.equal(chargeHint(cards[0], "2026-09-04", "2026-11-05").old, true);
+  assert.equal(chargeHint(cards[0], "2026-09-06", "2026-11-05").old, false);
+});

@@ -58,6 +58,23 @@ export function firstStatement(card: Pick<CardRow, "statement_day">, chargedOn: 
   const i = mi(y, m);
   return d <= Math.min(card.statement_day, daysIn(i)) ? i : i + 1;
 }
+/** วันจ่ายห่างจากวันตัดกี่วัน (ใช้เดือน 30 วันโดยประมาณ) · ปกติธนาคารไทย 15–20 วัน */
+export function dueGap(statementDay: number, dueDay: number): number {
+  return dueDay > statementDay ? dueDay - statementDay : dueDay + 30 - statementDay;
+}
+/** วันจ่ายดูผิดปกติไหม (ห่างน้อยกว่า 10 หรือเกิน 25 วัน) */
+export const oddDueGap = (statementDay: number, dueDay: number) => { const g = dueGap(statementDay, dueDay); return g < 10 || g > 25; };
+
+/** รายการที่รูดวันนี้เข้าบิลไหน + คำเตือนเรื่องวันที่ */
+export function chargeHint(card: Pick<CardRow, "statement_day" | "due_day">, chargedOn: string, today: string) {
+  const i = firstStatement(card, chargedOn);
+  const statement = dateOf(i, card.statement_day), due = dueOfStatement(card, i);
+  const toCut = Math.round((statement.getTime() - new Date(chargedOn + "T00:00:00").getTime()) / 864e5);
+  const t = new Date(today + "T00:00:00");
+  const old = ymdOf(new Date(t.getFullYear(), t.getMonth() - 2, t.getDate()));
+  return { statement, due, nearCut: toCut >= 0 && toCut <= 3, future: chargedOn > today, old: chargedOn < old };
+}
+
 /** ยอดของรายการนี้ที่อยู่ในบิลรอบ i (จ่ายเต็ม = งวดเดียว, ผ่อน = หารเท่ากัน) */
 export function amountOn(card: CardRow, c: ChargeRow, i: Mi): number {
   const k = i - firstStatement(card, c.charged_on);

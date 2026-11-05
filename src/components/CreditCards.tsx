@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
 import { COLORS, softOf } from "@/lib/family";
-import { cardSummary, ymdOf, installment, isSub, type CardRow, type ChargeRow } from "@/lib/cards";
+import { cardSummary, chargeHint, dueGap, oddDueGap, ymdOf, installment, isSub, type CardRow, type ChargeRow } from "@/lib/cards";
 import { play } from "@/lib/sfx";
 
 /** บัตรของฉัน + รายการทั้งหมด (ระบบให้เห็นเฉพาะบัตรของตัวเอง) */
@@ -338,6 +338,18 @@ function ChargeForm({ card, charge, today, onDone }: { card: CardRow; charge: Ch
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">{repeat === "none" ? "ยอดทั้งหมด (บาท)" : `ยอด${REPEAT_LABEL[repeat]} (บาท)`}<input className="field min-w-0" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ""))} /></label>
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">{repeat === "none" ? "วันที่รูด" : "เริ่มตัดวันที่"}<input className="field min-w-0" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
       </div>
+      {/^\d{4}-\d{2}-\d{2}$/.test(date) && (() => {
+        const h = chargeHint(card, date, today);
+        const warn = (repeat === "none" && h.future) || h.old || (repeat === "none" && h.nearCut);
+        return (
+          <div className={`-mt-1 flex flex-col gap-0.5 rounded-xl px-3 py-2 text-xs ${warn ? "bg-butter/70" : "bg-sand"}`}>
+            <span>{repeat === "none" ? "เข้าบิล" : "เริ่มเข้าบิล"}ตัด <b>{day(h.statement)}</b> · ครบจ่าย <b>{day(h.due)}</b></span>
+            {repeat === "none" && h.future && <span>⚠️ วันที่รูดเป็นวันในอนาคต เช็กวันที่อีกครั้งนะ</span>}
+            {h.old && <span>⚠️ วันที่ย้อนหลังเกิน 2 เดือน บิลนั้นอาจจ่ายไปแล้ว เช็กวันที่อีกครั้งนะ</span>}
+            {repeat === "none" && !h.future && h.nearCut && <span>⚠️ รูดใกล้วันตัดรอบ ธนาคารอาจลงรายการช้า 1–3 วัน ยอดนี้อาจไปอยู่บิลหน้า ดูใบแจ้งยอดอีกที</span>}
+          </div>
+        );
+      })()}
 
       <CategoryPicker value={cat} onChange={(c) => { setCat(c.key); if (!modeTouched) setMode(c.scope === "home" ? "home" : "person"); }} />
 
@@ -436,6 +448,7 @@ const BANKS = ["กสิกร", "ไทยพาณิชย์", "กรุ�
 
 function CardForm({ card, onDone }: { card: CardRow | null; onDone: () => void }) {
   const { role } = useHousehold();
+  const today = dayKey(new Date());
   const [name, setName] = useState(card?.name ?? "");
   const [bank, setBank] = useState(card?.bank ?? "");
   const [last4, setLast4] = useState(card?.last4 ?? "");
@@ -479,6 +492,18 @@ function CardForm({ card, onDone }: { card: CardRow | null; onDone: () => void }
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">วันครบกำหนดจ่าย<input className="field min-w-0" type="number" min={1} max={31} value={dDay} onChange={(e) => setDDay(e.target.value)} placeholder="เช่น 10" /></label>
       </div>
       <p className="-mt-1 text-xs text-muted">ดูได้จากใบแจ้งยอดบัตร · ถ้าวันจ่ายน้อยกว่าวันตัดรอบ แอปถือว่าจ่ายเดือนถัดไป</p>
+      {(() => {
+        const s = Number(sDay), d = Number(dDay);
+        if (!(s >= 1 && s <= 31 && d >= 1 && d <= 31)) return null;
+        const h = chargeHint({ statement_day: s, due_day: d }, today, today);
+        const odd = oddDueGap(s, d);
+        return (
+          <div className={`-mt-1 flex flex-col gap-0.5 rounded-xl px-3 py-2 text-xs ${odd ? "bg-butter/70" : "bg-sand"}`}>
+            <span>ตัวอย่าง: รูดวันนี้ → เข้าบิลตัด <b>{day(h.statement)}</b> → ครบจ่าย <b>{day(h.due)}</b></span>
+            {odd && <span>⚠️ วันจ่ายห่างจากวันตัดประมาณ {dueGap(s, d)} วัน ปกติธนาคารให้จ่ายหลังวันตัด 15–20 วัน ลองเช็กวันครบกำหนดชำระ (Due Date) ในใบแจ้งยอดอีกที ถ้าถูกแล้วกดบันทึกได้เลย</span>}
+          </div>
+        );
+      })()}
       <div className="grid grid-cols-2 gap-3">
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">เลขท้าย 4 ตัว<input className="field min-w-0" inputMode="numeric" maxLength={4} value={last4} onChange={(e) => setLast4(e.target.value.replace(/\D/g, ""))} placeholder="ไม่บังคับ" /></label>
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">วงเงิน (บาท)<input className="field min-w-0" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value.replace(/[^\d.,]/g, ""))} placeholder="ไม่บังคับ" /></label>
