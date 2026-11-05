@@ -27,6 +27,7 @@ export type BillRow = {
   other_share?: number | null;
   /** เดือนที่จ่าย 1–12 (ปีละครั้ง/เทอมแรก) ไว้กันเงินทุกเดือน */
   due_month?: number | null;
+  created_at?: string;
 };
 export type SettlementRow = { id: string; from_role: Role; to_role: Role; amount: number; created_at: string };
 export type MemberRow = { user_id: string; role: Role };

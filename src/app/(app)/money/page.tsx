@@ -58,7 +58,9 @@ export default function MoneyPage() {
 
   const shared = month.rows.filter(inScope);
   // รายจ่ายจริง = ไม่รวมเงินออม/ลงทุน และไม่รวมค่าใช้จ่ายรายปีที่จ่ายจากเงินที่กันไว้ทุกเดือน
-  const fundIds = new Set(bills.rows.filter(isFund).map((b) => b.id));
+  // จ่ายจากเงินที่กันไว้ได้ ก็ต่อเมื่อเพิ่มรายการนี้ก่อนเดือนที่ดู (มีเวลากันเงินแล้ว)
+  const viewKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
+  const fundIds = new Set(bills.rows.filter((b) => isFund(b) && (!b.created_at || b.created_at.slice(0, 7) < viewKey)).map((b) => b.id));
   const counted = (e: Pick<ExpenseRow, "category" | "bill_id">) => !isSaving(e.category) && !(e.bill_id && fundIds.has(e.bill_id));
   const total = shared.filter(counted).reduce((s, e) => s + Number(e.amount), 0);
   const deposits = useLive<{ amount: number; who: string }>("savings_deposits", hid, () =>

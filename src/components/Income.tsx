@@ -57,6 +57,8 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
   const isPast = ym.y * 12 + ym.m < now.getFullYear() * 12 + now.getMonth();
   const ymKey = `${ym.y}-${String(ym.m + 1).padStart(2, "0")}`;
+  // กันเงินรายปีเริ่มตั้งแต่เดือนที่เพิ่มรายการเข้าแอป (ไม่หักย้อนเดือนก่อนหน้า)
+  const addedBy = (b: BillRow) => !b.created_at || b.created_at.slice(0, 7) <= ymKey;
 
   const myIncome = (i: IncomeRow) => i.created_by === userId || i.who === role;
   const inc = incomes.rows.filter((i) => incomeInMonth(i, ym.y, ym.m) && (scope === "home" ? !i.private : myIncome(i)));
@@ -84,14 +86,16 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
       // รายปี/เทอม: แสดงเฉพาะเดือนที่ต้องจ่าย และจ่ายจากเงินที่กันไว้ (ไม่หักซ้ำ)
       const fund = isFund(b);
       if (fund && !isDueMonth(b, ym.m)) continue;
+      // เพิ่งเพิ่มเดือนนี้ = ยังไม่ได้กันเงินไว้ → นับเป็นบิลที่ต้องจ่ายตามปกติ
+      const fromFund = fund && (!b.created_at || b.created_at.slice(0, 7) < ymKey);
       const rec = monthRows.find((e) => e.bill_id === b.id);
       const c = cats.get(b.category ?? "bill");
       const date = b.due_day ? new Date(ym.y, ym.m, Math.min(b.due_day, dim)) : null;
       // ทุกวัน: รวมทั้งเดือน (วันละ x × จำนวนวัน)
       const amt = b.period === "daily" ? Number(b.amount) * dim : Number(b.amount);
       items.push({
-        key: `bill-${b.id}`, date, label: b.period === "daily" ? `${b.name} (วันละ ${baht(Number(b.amount))})` : b.name, amount: rec ? Number(rec.amount) : amt, icon: c.icon, paid: !!rec, fromFund: fund,
-        note: rec ? undefined : fund ? "🐷 จ่ายจากเงินที่กันไว้" : b.variable ? "ยอดประมาณ" : b.auto_record ? (date && b.auto_from && dayKey(date) < b.auto_from ? "เดือนนี้กดจดเอง เดือนหน้าจดให้" : "จดให้อัตโนมัติ") : undefined,
+        key: `bill-${b.id}`, date, label: b.period === "daily" ? `${b.name} (วันละ ${baht(Number(b.amount))})` : b.name, amount: rec ? Number(rec.amount) : amt, icon: c.icon, paid: !!rec, fromFund,
+        note: rec ? undefined : fromFund ? "🐷 จ่ายจากเงินที่กันไว้" : b.variable ? "ยอดประมาณ" : b.auto_record ? (date && b.auto_from && dayKey(date) < b.auto_from ? "เดือนนี้กดจดเอง เดือนหน้าจดให้" : "จดให้อัตโนมัติ") : undefined,
         tap: rec ? undefined : () => onRecord({ amount: b.variable ? "" : String(amt), date: dayKey(isThisMonth ? now : date ?? new Date(ym.y, ym.m, 1)), time: "12:00", merchant: b.name, category: b.category ?? "bill", paid_from: b.paid_from, private: false, note: "", bill_id: b.id, other_share: b.other_share ?? null }),
       });
     }
@@ -121,7 +125,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
   const reserve = items.filter((i) => !i.paid && !i.fromFund).reduce((s, i) => s + i.amount, 0);
   const used = spent + cardPaid + sharePaid;
   // กันเงินไว้ทุกเดือนสำหรับค่าใช้จ่ายรายปี/ต่อเทอม (sinking fund)
-  const fund = bills.filter(isFund).reduce((s, b) => s + fundPerMonth(b), 0);
+  const fund = bills.filter((b) => isFund(b) && addedBy(b)).reduce((s, b) => s + fundPerMonth(b), 0);
   const left = base - used - reserve - fund - saved + refund;
   // รูดบัตรรอบที่ยังไม่ตัด (จ่ายเดือนหน้า) + ภาระผ่อนต่อเดือน
   const todayKey = dayKey(now);
@@ -132,8 +136,9 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
   const loans = bills.filter((b) => b.period === "monthly" && isLoan(b)).reduce((s, b) => s + Number(b.amount), 0)
     + shareBills.filter(isLoan).reduce((s, b) => s + Number(b.amount) * myShare(b, role), 0)
     + sums.reduce((t, s) => t + s.monthlyInstallments, 0);
-  const dsr = !useBudget && income > 0 ? Math.round((loans / income) * 100) : 0;
-  const dsrTone = dsr <= 40 ? ["ดี", "bg-mint text-[#3F8A5F]"] : dsr <= 50 ? ["พอไหว", "bg-butter"] : ["หนักไป", "bg-rose/15 text-rose"];
+  // คิดจากยอดผ่อนปัจจุบัน จึงแสดงเฉพาะเดือนนี้
+  const dsr = isThisMonth && !useBudget && income > 0 ? Math.round((loans / income) * 100) : 0;
+  const dsrTone = dsr <= 40 ? ["ดี", "bg-mint text-[#3F8A5F]"] : dsr <= 50 ? ["เกินเกณฑ์", "bg-butter"] : ["หนักไป", "bg-rose/15 text-rose"];
   const daysLeft = isThisMonth ? new Date(ym.y, ym.m + 1, 0).getDate() - now.getDate() + 1 : 0;
   const seg = (v: number) => `${Math.min(100, base > 0 ? (v / base) * 100 : 0)}%`;
   const [showAll, setShowAll] = useState(false);
@@ -144,7 +149,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
       {header}
       {collapsed.has("month") ? (
         <button type="button" onClick={() => collapsed.toggle("month")} aria-expanded={false} className="flex items-center gap-2 text-left">
-          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+          <span className="flex-1 text-sm">{base === 0 ? "ใช้ไปแล้ว" : isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? (scope === "home" && !useBudget ? "เหลือหลังหักค่าใช้จ่ายบ้าน" : "เหลือใช้ได้จริง") : "ใช้เกินไปแล้ว"}</span>
           <span className={`font-display text-xl font-bold ${base > 0 && left < 0 ? "text-rose" : ""}`}>{baht(base === 0 ? used : Math.abs(left))} บาท</span>
           {reserve > 0 && <span className="text-xs font-semibold text-rose">{isThisMonth ? "ค้าง" : "ต้องจ่าย"} {baht(reserve)}</span>}
           <span className="text-muted" aria-hidden>▾</span>
@@ -163,7 +168,7 @@ export function MonthCard({ scope, spent, saved = 0, counted = () => true, bills
         <>
           <div className="flex items-end justify-between gap-2">
             <span className="flex flex-col">
-              <span className="text-sm">{isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? "เหลือใช้ได้จริง" : "ใช้เกินไปแล้ว"}</span>
+              <span className="text-sm">{isPast ? (left >= 0 ? "เดือนนั้นเหลือ" : "เดือนนั้นใช้เกิน") : !isThisMonth ? (left >= 0 ? "คาดว่าจะเหลือ" : "คาดว่าจะเกิน") : left >= 0 ? (scope === "home" && !useBudget ? "เหลือหลังหักค่าใช้จ่ายบ้าน" : "เหลือใช้ได้จริง") : "ใช้เกินไปแล้ว"}</span>
               <span className={`font-display text-[32px] font-bold leading-tight ${left < 0 ? "text-rose" : ""}`}>{baht(Math.abs(left))} <span className="text-base font-medium">บาท</span></span>
             </span>
             {isThisMonth && left > 0 && daysLeft > 0 && <span className="mb-1 rounded-xl bg-white/80 px-2.5 py-1 text-sm">วันละ ~<b>{baht(left / daysLeft)}</b> · {daysLeft} วัน</span>}
