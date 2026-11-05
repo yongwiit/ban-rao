@@ -10,6 +10,7 @@ import { DEFAULT_PEOPLE, makePeople, person, type MascotKind, type People, type 
 import { Bear, Bunny, Chick, Family, Mascot } from "./Mascots";
 import { Credit } from "./Credit";
 import { PresenceProvider } from "./Presence";
+import { ForgotPassword, NewPasswordScreen, isRecoveryLanding, recoveryLinkError } from "./Password";
 
 export type HouseholdRow = {
   id: string;
@@ -52,6 +53,9 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [member, setMember] = useState<{ role: MemberRole; household: HouseholdRow; partnerJoined: boolean; tourDone: boolean; uiPrefs: Record<string, unknown> } | null | undefined>(undefined);
   const [people, setPeople] = useState<People>(() => makePeople(DEFAULT_PEOPLE));
+  // มาจากลิงก์ "ตั้งรหัสผ่านใหม่" ในอีเมล: ต้องเช็กก่อนที่ Supabase จะล้าง # ออกจาก URL
+  const [recovery, setRecovery] = useState(() => isRecoveryLanding());
+  const [linkError] = useState(() => recoveryLinkError());
 
   const loadPeople = useCallback(async (hid: string) => {
     const { data } = await supabase().from("household_people").select("key, name, mascot, color, sort, promptpay").eq("household_id", hid).order("sort").order("key");
@@ -60,7 +64,10 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase().auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase().auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = supabase().auth.onAuthStateChange((e, s) => {
+      if (e === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(s);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -102,10 +109,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     if (session) loadMember();
   }, [session, loadMember]);
 
+  if (recovery && session) return <NewPasswordScreen onDone={() => setRecovery(false)} />;
   if (session === undefined || (session && member === undefined)) {
     return <Splash />;
   }
-  if (!session) return <Login />;
+  if (!session) return <Login linkError={linkError} />;
   if (!member) return <Setup onDone={loadMember} />;
 
   return (
@@ -151,13 +159,17 @@ function Splash() {
   );
 }
 
-function Login() {
+function Login({ linkError }: { linkError: string | null }) {
   const [invited] = useState(() => pendingJoinCode());
   const [mode, setMode] = useState<"in" | "up">(invited ? "up" : "in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(linkError);
+  const [forgot, setForgot] = useState(false);
+  useEffect(() => {
+    if (linkError) history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, [linkError]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -176,7 +188,7 @@ function Login() {
       return;
     }
     setBusy(false);
-    if (error) setMsg(error.message);
+    if (error) setMsg(mode === "in" && (error.code === "invalid_credentials" || /invalid login/i.test(error.message)) ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : error.message);
   }
 
   return (
@@ -187,6 +199,7 @@ function Login() {
         <p className="text-muted">ปฏิทิน ซื้อของ และเงินของบ้าน ในที่เดียว</p>
         {invited && <p className="rounded-2xl bg-lavender px-4 py-2 text-sm">คุณได้รับเชิญเข้าบ้าน 💌 สมัครด้วยอีเมลก่อน แล้วระบบจะใส่รหัสบ้านให้</p>}
       </div>
+      {forgot ? <ForgotPassword initialEmail={email} onBack={() => { setForgot(false); setMsg(null); }} /> :
       <form onSubmit={submit} className="card flex flex-col gap-3">
         {GOOGLE_LOGIN && (
           <>
@@ -212,12 +225,15 @@ function Login() {
           รหัสผ่าน
           <input className="field" type="password" required minLength={6} autoComplete={mode === "in" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
+        {mode === "in" && (
+          <button type="button" className="-mt-1 min-h-11 self-end text-sm text-muted underline" onClick={() => { setForgot(true); setMsg(null); }}>ลืมรหัสผ่าน?</button>
+        )}
         {msg && <p role="alert" className="text-sm text-rose">{msg}</p>}
         <button className="btn-dark mt-1" disabled={busy}>{mode === "in" ? "เข้าสู่ระบบ" : "สมัครใช้งาน"}</button>
         <button type="button" className="min-h-11 text-sm text-muted underline" onClick={() => setMode(mode === "in" ? "up" : "in")}>
           {mode === "in" ? "ยังไม่มีบัญชี? สมัครใช้งาน" : "มีบัญชีแล้ว? เข้าสู่ระบบ"}
         </button>
-      </form>
+      </form>}
       <Credit />
     </main>
   );

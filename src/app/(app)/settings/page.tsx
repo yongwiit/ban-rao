@@ -8,6 +8,7 @@ import { CalendarLink } from "@/components/CalendarLink";
 import { PushSetup } from "@/components/PushSetup";
 import { Credit } from "@/components/Credit";
 import { SoundToggle } from "@/components/SoundToggle";
+import { ChangePassword } from "@/components/Password";
 import { FamilyEditor } from "@/components/FamilyEditor";
 import { MenuSettings } from "@/components/MenuPicker";
 import { Tour } from "@/components/Tour";
@@ -60,6 +61,8 @@ export default function SettingsPage() {
         </span>
         <ChevronIcon />
       </Link>}
+
+      <ChangePassword />
 
       <button onClick={signOut} className="mt-2 min-h-11 text-sm text-muted underline">ออกจากระบบ</button>
       <Credit className="pb-4" />
