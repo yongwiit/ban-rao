@@ -46,7 +46,7 @@ function parse(ymd: string): { y: number; m: number; d: number } {
   return { y, m: m - 1, d };
 }
 const todayParts = (today: string) => parse(today);
-const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** วันครบกำหนดจ่ายของบิลที่ตัดรอบเดือน i (ถ้าวันจ่ายน้อยกว่าหรือเท่าวันตัด = เดือนถัดไป) */
 export function dueOfStatement(card: Pick<CardRow, "statement_day" | "due_day">, i: Mi): Date {

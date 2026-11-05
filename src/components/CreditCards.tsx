@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useLive } from "@/lib/useLive";
 import { baht, dayKey, thaiDate } from "@/lib/format";
 import { COLORS, softOf } from "@/lib/family";
-import { cardSummary, installment, isSub, type CardRow, type ChargeRow } from "@/lib/cards";
+import { cardSummary, ymdOf, installment, isSub, type CardRow, type ChargeRow } from "@/lib/cards";
 import { play } from "@/lib/sfx";
 
 /** บัตรของฉัน + รายการทั้งหมด (ระบบให้เห็นเฉพาะบัตรของตัวเอง) */
@@ -107,6 +107,9 @@ export function CreditCards() {
         const pending = mine.filter((c) => c.bill_status === "pending").length;
         const next = view === "next";
         const nothing = !next && st === "none";
+        // วันนี้ = วันตัดบัตร → รายการวันนี้ยังเข้ารอบนี้ พรุ่งนี้บิลจะย้ายไปแท็บ "บิลรอบนี้"
+        const cutToday = ymdOf(s.cycleEnd) === today;
+        const cut = cutToday ? "ตัดบิลวันนี้" : `ตัด ${day(s.cycleEnd)}`;
         return (
           <button key={card.id} onClick={() => setOpenId(card.id)} className="flex flex-col gap-1 rounded-2xl p-3 text-left" style={{ background: softOf(card.color) }}>
             <span className="flex items-center gap-2">
@@ -117,19 +120,19 @@ export function CreditCards() {
             {next ? (
               <span className="flex items-baseline justify-between gap-2">
                 <span className="text-sm">รอบถัดไป <b className="font-display text-xl">{baht(s.cycleAmount)}</b> บาท</span>
-                <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัด {day(s.cycleEnd)} · จ่าย {day(s.cycleDue)}</span>
+                <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs ${cutToday ? "bg-butter font-semibold" : "bg-white/70"}`}>{cut} · จ่าย {day(s.cycleDue)}</span>
               </span>
             ) : nothing ? (
               s.cycleAmount > 0 ? (
                 // บิลรอบก่อนไม่มียอด → แสดงบิลที่กำลังจะตัด (เช่น ตัดรอบวันนี้)
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="text-sm">ต้องจ่าย <b className="font-display text-xl">{baht(s.cycleAmount)}</b> บาท</span>
-                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs font-semibold">ตัด {day(s.cycleEnd)} · จ่าย {day(s.cycleDue)}</span>
+                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs font-semibold">{cut} · จ่าย {day(s.cycleDue)}</span>
                 </span>
               ) : (
                 <span className="flex items-baseline justify-between gap-2 opacity-70">
                   <span className="text-sm">ยังไม่มียอดต้องจ่าย</span>
-                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">ตัดรอบ {day(s.cycleEnd)}</span>
+                  <span className="shrink-0 rounded-lg bg-white/70 px-2 py-0.5 text-xs">{cutToday ? "ตัดบิลวันนี้" : `ตัดรอบ ${day(s.cycleEnd)}`}</span>
                 </span>
               )
             ) : (
@@ -142,11 +145,13 @@ export function CreditCards() {
                     : <span className={`shrink-0 rounded-lg px-2 py-0.5 text-xs font-semibold ${d <= 3 ? "bg-butter" : "bg-white/70"}`}>จ่าย {day(s.last.due)} · {inDays(d)}</span>}
               </span>
             )}
+            {!next && !nothing && <span className="text-xs text-muted">บิลตัด {day(s.last.statement)} · ครบจ่าย {day(s.last.due)}{cutToday ? " · รอบใหม่ตัดบิลวันนี้" : ""}</span>}
             <span className="text-xs text-muted">
-              รอบนี้ใช้ไป {baht(s.cycleAmount)} (ตัด {day(s.cycleEnd)})
-              {s.installments.length > 0 ? ` · ผ่อนอยู่ ${s.installments.length} รายการ เดือนละ ${baht(s.monthlyInstallments)}` : ""}
-              {s.subs.length > 0 ? ` · subscription ${s.subs.length}` : ""}
-              {card.credit_limit ? ` · วงเงินเหลือ ~${baht(Number(card.credit_limit) - s.outstanding)}` : ""}
+              {[
+                s.installments.length > 0 ? `ผ่อนอยู่ ${s.installments.length} รายการ เดือนละ ${baht(s.monthlyInstallments)}` : "",
+                s.subs.length > 0 ? `subscription ${s.subs.length}` : "",
+                card.credit_limit ? `วงเงินเหลือ ~${baht(Number(card.credit_limit) - s.outstanding)}` : "",
+              ].filter(Boolean).join(" · ")}
             </span>
           </button>
         );
